@@ -718,8 +718,9 @@ button{font-family:inherit;}
    ========================================================================= */
 const MONETIZATION_CONFIG = {
   AFFILIATE: {
-    skyscannerPartnerId: "",   // 예: "irclickid_xxx" - 스카이스캐너 파트너 센터(무료)
-    bookingAid: ""             // 예: "1234567" - Booking.com Partner Hub(무료)
+    skyscannerPartnerId: "",   // 예: "irclickid_xxx" - 스카이스캐너 파트너 센터(법인/사업자 위주)
+    bookingAid: "",            // 예: "1234567" - Booking.com Partner Hub(무료, 개인 가능)
+    travelpayoutsMarker: "760232"    // 예: "123456" - TravelPayouts(무료, 개인 100% 가능, 추천)
   },
   GA_MEASUREMENT_ID: "G-PWVD8HY990",       // 예: "G-XXXXXXXXXX"
   WAITLIST_ENDPOINT: ""        // 예: "https://formspree.io/f/xxxxxxx"
@@ -745,12 +746,16 @@ function trackEvent(name, params){
 
 function buildFlightSearchUrl(destName){
   const q = encodeURIComponent(destName);
+  const tp = MONETIZATION_CONFIG.AFFILIATE.travelpayoutsMarker;
+  if(tp) return "https://www.aviasales.com/?marker=" + encodeURIComponent(tp);
   const pid = MONETIZATION_CONFIG.AFFILIATE.skyscannerPartnerId;
   return "https://www.skyscanner.co.kr/transport/flights-to/" + q + "/"
     + (pid ? ("?associateid=" + encodeURIComponent(pid)) : "");
 }
 function buildStaySearchUrl(destName){
   const q = encodeURIComponent(destName);
+  const tp = MONETIZATION_CONFIG.AFFILIATE.travelpayoutsMarker;
+  if(tp) return "https://search.hotellook.com/hotels?destination=" + q + "&marker=" + encodeURIComponent(tp);
   const aid = MONETIZATION_CONFIG.AFFILIATE.bookingAid;
   return "https://www.booking.com/searchresults.ko.html?ss=" + q
     + (aid ? ("&aid=" + encodeURIComponent(aid)) : "");
