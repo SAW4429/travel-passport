@@ -247,6 +247,14 @@ button{font-family:inherit;}
 .waitlist-box{display:flex;gap:8px;padding:14px 22px;border-top:1px solid var(--paper-3);}
 .waitlist-box input{flex:1;border:1px solid var(--paper-3);border-radius:9px;padding:9px 12px;font-size:13px;}
 .waitlist-box button{background:var(--gold);border:none;border-radius:9px;padding:9px 14px;font-weight:800;font-size:13px;cursor:pointer;color:var(--navy);}
+.affiliate-note{padding:0 22px 12px;margin:0;font-size:11px;color:var(--ink-soft);}
+.legal-body{padding:20px 26px;overflow-y:auto;font-size:13.5px;line-height:1.7;color:var(--ink);}
+.legal-body h4{margin:18px 0 8px;font-size:14.5px;color:var(--navy);}
+.legal-body h4:first-child{margin-top:0;}
+.legal-body ul{margin:6px 0 10px;padding-left:20px;}
+.legal-body li{margin-bottom:6px;}
+.legal-contact{color:var(--ink-soft);font-size:12px;margin-top:16px;}
+.credit a#legalOpenLink{white-space:nowrap;}
 .checklist-item{display:flex;align-items:center;gap:9px;padding:8px 10px;font-size:14px;font-weight:500;color:var(--ink);border-radius:8px;transition:background .15s ease;}
 .checklist-item:hover{background:var(--paper-2);}
 .checklist-item input[type=checkbox]{width:17px;height:17px;accent-color:var(--visit);flex-shrink:0;}
@@ -543,6 +551,7 @@ button{font-family:inherit;}
           <a id="sbFlightLink" class="travel-link-btn" target="_blank" rel="noopener sponsored">✈ 항공권 검색</a>
           <a id="sbStayLink" class="travel-link-btn" target="_blank" rel="noopener sponsored">🏨 숙소 검색</a>
         </div>
+        <p class="affiliate-note" id="sbAffiliateNote" style="display:none;">* 제휴 링크로, 예약 시 운영자에게 일정 수수료가 지급될 수 있어요</p>
         <div class="section-label">나만의 체크리스트</div>
         <div id="sbChecklist"></div>
         <div id="sbEmptyNote" class="empty-note" style="display: block;">아직 추가한 장소가 없어요. 가고 싶은 곳을 적어보세요.</div>
@@ -556,6 +565,7 @@ button{font-family:inherit;}
 
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
+    · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
   </div>
 </div>
 
@@ -657,6 +667,34 @@ button{font-family:inherit;}
         </div>
       </div>
       <div class="challenge-body" id="challengeBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="legalOverlay">
+  <div class="modal-wrap" style="max-width:640px;">
+    <div class="passport-book" style="max-height:85vh;">
+      <div class="passport-topbar">
+        <div class="tb-title">이용안내 <span class="gold">PRIVACY & TERMS</span></div>
+        <div class="tb-actions">
+          <button class="passport-close" id="legalClose" aria-label="닫기">✕</button>
+        </div>
+      </div>
+      <div class="legal-body">
+        <h4>개인정보처리방침</h4>
+        <p>본 사이트는 개인이 운영하는 비상업 목적의 취미 프로젝트이며, 다음과 같이 최소한의 정보만 수집합니다.</p>
+        <ul>
+          <li><b>방문 통계(Google Analytics):</b> 어떤 페이지를 방문했는지, 대략적인 지역·기기 정보를 익명 통계 형태로 수집합니다. 개인을 특정하지 않습니다.</li>
+          <li><b>이메일(선택):</b> "프리미엄 알림받기"에 자발적으로 입력한 이메일만 수집하며, 알림 발송 목적 외에는 사용하지 않습니다.</li>
+          <li><b>지도 기록 데이터:</b> 방문/계획 표시, 체크리스트 등은 이용자 브라우저(로컬)에 저장되며 운영자에게 전송되지 않습니다.</li>
+        </ul>
+        <p>수집한 정보는 제3자에게 판매하거나 제공하지 않으며, 이메일 삭제를 원하시면 언제든 하단 연락처로 요청해주세요.</p>
+        <h4>제휴(어필리에이트) 링크 고지</h4>
+        <p>본 사이트의 "항공권 검색 / 숙소 검색" 버튼은 <b>제휴 마케팅 링크</b>입니다. 해당 링크를 통해 예약이 이루어지는 경우 운영자가 <b>일정 수수료를 지급받을 수 있으며</b>, 이는 이용자가 지불하는 가격에 영향을 주지 않습니다.</p>
+        <h4>이용약관</h4>
+        <p>본 사이트가 제공하는 지도 경계·정보는 정확성을 보장하지 않으며, 실제 행정구역과 차이가 있을 수 있습니다. 서비스는 예고 없이 변경되거나 중단될 수 있습니다.</p>
+        <p class="legal-contact">문의: GitHub 저장소 Issues 탭을 통해 남겨주세요.</p>
+      </div>
     </div>
   </div>
 </div>
@@ -1305,6 +1343,13 @@ document.getElementById("challengeBtn").addEventListener("click", openChallenges
 document.getElementById("challengeClose").addEventListener("click", closeChallenges);
 challengeOverlay.addEventListener("click", e=>{ if(e.target === challengeOverlay) closeChallenges(); });
 
+const legalOverlay = document.getElementById("legalOverlay");
+function openLegal(){ legalOverlay.classList.add("open"); document.body.style.overflow = "hidden"; }
+function closeLegal(){ legalOverlay.classList.remove("open"); document.body.style.overflow = ""; }
+document.getElementById("legalOpenLink").addEventListener("click", e=>{ e.preventDefault(); openLegal(); });
+document.getElementById("legalClose").addEventListener("click", closeLegal);
+legalOverlay.addEventListener("click", e=>{ if(e.target === legalOverlay) closeLegal(); });
+
 document.getElementById("suggestBtn").addEventListener("click", ()=>{
   const candidates = ALL_REGIONS.filter(r => (state.statuses[r.code] || "none") === "none");
   if(!candidates.length){ showToast("모든 지역을 이미 등록했어요!"); return; }
@@ -1713,8 +1758,10 @@ function renderSidebar(code){
     dateEl.style.display = "none";
   }
   const travelWrap = document.getElementById("sbTravelLinks");
+  const affNote = document.getElementById("sbAffiliateNote");
   if(r.domain === "world" && st !== "visited"){
     travelWrap.style.display = "flex";
+    affNote.style.display = "block";
     const destName = r.eng || r.name;
     const flightA = document.getElementById("sbFlightLink");
     const stayA = document.getElementById("sbStayLink");
@@ -1724,6 +1771,7 @@ function renderSidebar(code){
     stayA.onclick = ()=> trackEvent("affiliate_click", { type:"stay", region_code: code });
   } else {
     travelWrap.style.display = "none";
+    affNote.style.display = "none";
   }
   renderChecklist(code);
 }
