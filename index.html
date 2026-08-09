@@ -1300,6 +1300,7 @@ function setStatus(code, status){
     state.dates[code] = todayStr();
     showToast(r.name + " 도장을 받았어요");
     fireConfetti();
+    trackEvent("region_complete", { region_code: code });
   } else if(status === "planning" && prev !== "planning"){
     if(!state.planAddedAt) state.planAddedAt = {};
     state.planAddedAt[code] = Date.now();
@@ -1826,6 +1827,7 @@ function renderStats(){
 
 /* ---------- Export / Import ---------- */
 document.getElementById("exportBtn").addEventListener("click", ()=>{
+  trackEvent("data_export", {});
   const blob = new Blob([JSON.stringify({ version:4, exportedAt: new Date().toISOString(), state }, null, 2)], { type:"application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1868,6 +1870,7 @@ document.getElementById("importFile").addEventListener("change", (e)=>{
 
 /* ---------- Shareable summary card (canvas PNG) ---------- */
 document.getElementById("shareCardBtn").addEventListener("click", ()=>{
+  trackEvent("share_click", {});
   const stats = computeStats();
   const canvas = document.createElement("canvas");
   canvas.width = 1080; canvas.height = 1350;
@@ -2015,6 +2018,7 @@ document.querySelectorAll(".ptab").forEach(btn=>{
 
 function openSidebar(code){
   currentCode = code;
+  trackEvent("region_click", { region_code: code });
   document.querySelectorAll(".region.selected").forEach(el=>el.classList.remove("selected"));
   regionEls(code).forEach(el=>el.classList.add("selected"));
   renderSidebar(code);
