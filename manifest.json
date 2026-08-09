@@ -1,0 +1,14 @@
+{
+  "name": "나의 여행 여권",
+  "short_name": "여행여권",
+  "description": "국내외 여행지를 지도에 기록하는 나만의 여행 체크리스트",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0E1B30",
+  "theme_color": "#0E1B30",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

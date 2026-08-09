@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://saw4429.github.io/travel-passport/sitemap.xml
