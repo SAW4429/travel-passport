@@ -1963,6 +1963,9 @@ document.getElementById("shareCardBtn").addEventListener("click", ()=>{
   ctx.fillStyle = "#9B8F72";
   ctx.font = "20px monospace";
   ctx.fillText(todayStr() + " 기준", 540, 1260);
+  ctx.fillStyle = "rgba(246,241,228,.55)";
+  ctx.font = "600 22px monospace";
+  ctx.fillText("saw4429.github.io/travel-passport", 540, 1300);
 
   trackEvent("share_card_created", { visited_total: visitedTotal });
   canvas.toBlob(async blob=>{
