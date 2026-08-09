@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.5.0 (2026-08-09)
+- 첫 방문자 온보딩 카드 추가: `localStorage`에 방문 기록(`onboardingSeen` 플래그, 저장된 방문 상태)이 전혀 없는 진짜 신규 방문자에게만 3단계 이내의 가벼운 카드 노출 (전체 화면 모달 아님, 언제든 닫기 가능, 한 번 닫으면 다시 안 뜸)
+  - GA 이벤트 추가: onboarding_shown, onboarding_dismissed, onboarding_completed
+- SEO: `<head>`에 WebApplication JSON-LD 구조화 데이터 추가 (기존 OG/Twitter 메타 태그와 동일한 name/description/url, 평점·리뷰 등 허위 정보 없음, JSON 문법 검증 완료)
+- 접근성: 아이콘만 있던 버튼 중 aria-label이 빠져있던 사이드바 닫기 버튼, 체크리스트 항목 삭제 버튼에 aria-label 보강
+- 성능/접근성 점검 결과 (수정 없이 보고만): 이미지 alt 속성 전수 점검 완료(문제 없음, 국기 이미지는 인접 텍스트와 중복 방지를 위해 의도적으로 alt=""), 5개 테마 전체의 텍스트 색상 대비 WCAG AA 기준 통과 확인(조정 불필요), 지도 렌더링은 이미 기본 지역은 즉시·상세 지역(줌 필요)은 requestIdleCallback으로 분할 렌더링 중임을 확인 — 남은 개선 여지는 페이지 로드 시 26개국 상세지도 JSON을 한꺼번에 파싱하는 부분으로, 필요한 국가만 지연 로딩하려면 데이터 구조 자체를 별도 파일로 분리해야 해서 이번 작업 범위를 벗어나 별도 작업으로 남겨둠
+
 ## v2.4.0 (2026-08-09)
 - 국가 추천 데이터 입력 보조 도구 추가: `admin-country-recs.html` (관리자 전용, 메인 사이트와 완전히 분리된 별도 파일)
   - `index.html`의 실제 `WORLD_DATA`/`DETAIL_ARRAYS`(BLOB_NAMES) 데이터를 그대로 읽어와 국가 드롭다운 구성 (오타·잘못된 코드 방지, 새 코드 체계 없음)
