@@ -775,6 +775,15 @@ button{font-family:inherit;}
 
 <div class="toast" id="toast">유타을(를) 다음 여행지로 담았어요</div>
 
+<div id="onboardingCard" style="display:none;position:fixed;top:78px;right:16px;width:250px;z-index:600;background:var(--navy);color:var(--paper);border:1px solid var(--gold);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-lg);font-size:13px;line-height:1.5;">
+  <button id="onboardingClose" aria-label="온보딩 안내 닫기" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--paper);opacity:.6;font-size:15px;line-height:1;cursor:pointer;padding:4px;">✕</button>
+  <div id="onboardingStepText" style="margin:2px 22px 12px 0;"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;">
+    <div id="onboardingDots" style="display:flex;gap:5px;"></div>
+    <button id="onboardingNextBtn" style="background:var(--gold);color:var(--ink);border:none;border-radius:8px;padding:6px 14px;font-size:12.5px;font-weight:700;cursor:pointer;">다음</button>
+  </div>
+</div>
+
 <div id="pwaBanner" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1B140A;color:#F6F1E4;font-size:12.5px;padding:11px 14px;align-items:center;gap:10px;justify-content:space-between;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
   <span style="line-height:1.4;">홈 화면에 추가하면 다음에 더 빠르게 열 수 있어요</span>
   <span style="display:flex;gap:6px;flex-shrink:0;">
@@ -2598,7 +2607,50 @@ document.addEventListener("keydown", e=>{
 loadState();
 initCloudSync();
 loadCountryRecommendations();
+initOnboarding();
 window.addEventListener("load", initCloudSync);
+
+/* ---------- 첫 방문자 온보딩 (가벼운 카드, 방문 기록 없는 사용자에게만) ---------- */
+function initOnboarding(){
+  const SEEN_KEY = "onboardingSeen";
+  if(localStorage.getItem(SEEN_KEY) === "1") return;
+  if(Object.keys(state.statuses).length > 0) return; // 이미 방문 기록이 있으면 신규 방문자가 아님
+
+  const STEPS = [
+    "① 지역을 클릭해서 방문 상태를 표시해보세요.",
+    "② 검색으로 원하는 지역을 빠르게 찾아보세요.",
+    "③ 채워진 지도를 공유해보세요."
+  ];
+  const card = document.getElementById("onboardingCard");
+  const textEl = document.getElementById("onboardingStepText");
+  const dotsEl = document.getElementById("onboardingDots");
+  const nextBtn = document.getElementById("onboardingNextBtn");
+  const closeBtn = document.getElementById("onboardingClose");
+  let step = 0;
+
+  function renderStep(){
+    textEl.textContent = STEPS[step];
+    dotsEl.innerHTML = STEPS.map((_, i) =>
+      `<span style="width:6px;height:6px;border-radius:50%;background:${i === step ? "var(--gold)" : "rgba(246,241,228,.35)"};display:inline-block;"></span>`
+    ).join("");
+    nextBtn.textContent = (step === STEPS.length - 1) ? "완료" : "다음";
+  }
+  function dismiss(completed){
+    card.style.display = "none";
+    try{ localStorage.setItem(SEEN_KEY, "1"); }catch(e){}
+    trackEvent(completed ? "onboarding_completed" : "onboarding_dismissed", { step: step + 1 });
+  }
+  nextBtn.addEventListener("click", ()=>{
+    if(step === STEPS.length - 1){ dismiss(true); return; }
+    step++;
+    renderStep();
+  });
+  closeBtn.addEventListener("click", ()=> dismiss(false));
+
+  renderStep();
+  card.style.display = "block";
+  trackEvent("onboarding_shown", {});
+}
 
 /* ---------- In-app browser helper (Threads/Instagram/etc.) ---------- */
 (function(){
