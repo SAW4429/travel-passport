@@ -287,6 +287,12 @@ button{font-family:inherit;}
 .prep-collapse{margin-top:20px;border-top:1px solid var(--paper-3);padding-top:14px;}
 .prep-collapse summary{font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold-2);font-weight:700;cursor:pointer;}
 .prep-slots{margin-top:10px;display:flex;flex-direction:column;gap:8px;min-height:4px;}
+.country-recs{margin-top:18px;padding:14px 14px 12px;border-radius:12px;background:linear-gradient(135deg, var(--paper-2), var(--paper));border:1.5px solid var(--gold);box-shadow:var(--shadow-sm);}
+.country-recs-title{font-family:var(--font-serif);font-size:13.5px;font-weight:800;color:var(--gold-2);margin-bottom:10px;}
+.country-rec-reason{font-size:12.5px;color:var(--ink-soft);margin:0 0 4px;}
+.country-rec-name{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+.country-rec-widget-wrap{overflow:hidden;max-width:100%;}
+.country-rec-culture{display:block;margin-top:10px;font-size:12.5px;font-weight:700;color:var(--navy);text-decoration:underline;text-underline-offset:2px;}
 .visit-date{font-size:12px;color:var(--stamp-red);font-family:var(--font-mono);margin-top:6px;font-weight:600;}
 
 .modal-overlay{
@@ -590,6 +596,16 @@ button{font-family:inherit;}
           <a id="sbStayLink" class="travel-link-btn" target="_blank" rel="noopener sponsored">🏨 숙소 검색</a>
         </div>
         <p class="affiliate-note" id="sbAffiliateNote" style="display:none;">* 제휴 링크로, 예약 시 운영자에게 일정 수수료가 지급될 수 있어요</p>
+        <div class="country-recs" id="sbCountryRecs" style="display:none;">
+          <div class="country-recs-title">이 나라를 여행한다면</div>
+          <div class="country-rec-product" id="sbCountryProduct" style="display:none;">
+            <p class="country-rec-reason" id="sbCountryReason"></p>
+            <div class="country-rec-name" id="sbCountryProductName"></div>
+            <div class="country-rec-widget-wrap" id="sbCountryWidgetWrap"></div>
+            <p class="affiliate-note" id="sbCountryAffiliateNote" style="display:none;">* 제휴 링크로, 구매 시 운영자에게 일정 수수료가 지급될 수 있어요</p>
+          </div>
+          <a class="country-rec-culture" id="sbCountryCultureLink" target="_blank" rel="noopener" style="display:none;"></a>
+        </div>
         <div class="section-label">나만의 체크리스트</div>
         <div id="sbChecklist"></div>
         <div id="sbEmptyNote" class="empty-note" style="display: block;">아직 추가한 장소가 없어요. 가고 싶은 곳을 적어보세요.</div>
@@ -978,6 +994,29 @@ function descOf(r){
 function flagUrl(r){
   if(!r.iso2) return null;
   return "https://flagcdn.com/w80/" + r.iso2.toLowerCase() + ".png";
+}
+// 국가별 맞춤 추천(country-recommendations.json) 조회용 키. ISO 3166-1 alpha-2를 그대로 사용하며,
+// r.iso2는 데이터 소스에 따라 대/소문자가 섞여 있어(WORLD_DATA는 대문자, 국가 상세지도는 소문자) 여기서 통일한다.
+function countryCodeOf(r){
+  if(!r || r.domain !== "world" || !r.iso2) return null;
+  return r.iso2.toUpperCase();
+}
+
+/* =========================================================================
+   국가별 맞춤 추천 (상품 1개 + 문화/주의사항 글 1개) - country-recommendations.json
+   해당 국가 데이터가 없으면(대부분의 국가) 조용히 섹션을 숨긴다. 실패해도 사이트 나머지 기능엔 영향 없음.
+   ========================================================================= */
+let COUNTRY_RECS = {};
+async function loadCountryRecommendations(){
+  try{
+    const res = await fetch("country-recommendations.json", { cache: "no-store" });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(data && typeof data === "object") COUNTRY_RECS = data;
+  }catch(e){
+    console.warn("국가별 맞춤 추천 데이터를 불러오지 못했어요 (다른 기능에는 영향 없음):", e);
+  }
+  if(currentCode) renderSidebar(currentCode);
 }
 
 let state = { statuses:{}, dates:{}, checklist:{}, theme:"classic", planAddedAt:{} };
@@ -2104,7 +2143,50 @@ function renderSidebar(code){
     travelWrap.style.display = "none";
     affNote.style.display = "none";
   }
+  renderCountryRecs(code, r);
   renderChecklist(code);
+}
+function renderCountryRecs(code, r){
+  const wrap = document.getElementById("sbCountryRecs");
+  const isoCode = countryCodeOf(r);
+  const rec = isoCode ? COUNTRY_RECS[isoCode] : null;
+  if(!rec || typeof rec !== "object"){ wrap.style.display = "none"; return; }
+
+  const product = (rec.product && typeof rec.product === "object") ? rec.product : null;
+  const hasProduct = !!(product && typeof product.name === "string" && product.name.trim());
+  const culture = (rec.culture && typeof rec.culture === "object") ? rec.culture : null;
+  const hasCulture = !!(culture && typeof culture.title === "string" && culture.title.trim()
+    && typeof culture.url === "string" && culture.url.trim());
+
+  if(!hasProduct && !hasCulture){ wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+
+  const productBox = document.getElementById("sbCountryProduct");
+  const widgetWrap = document.getElementById("sbCountryWidgetWrap");
+  if(hasProduct){
+    productBox.style.display = "block";
+    document.getElementById("sbCountryReason").textContent = (typeof product.reason === "string" && product.reason.trim()) ? product.reason : "";
+    document.getElementById("sbCountryProductName").textContent = product.name;
+    widgetWrap.innerHTML = "";
+    if(typeof product.widgetHtml === "string" && product.widgetHtml.trim()){
+      try{ widgetWrap.innerHTML = product.widgetHtml; }catch(e){ widgetWrap.innerHTML = ""; }
+    }
+    document.getElementById("sbCountryAffiliateNote").style.display = "block";
+    widgetWrap.onclick = ()=> trackEvent("country_product_click", { country_code: isoCode });
+    trackEvent("country_product_view", { country_code: isoCode });
+  } else {
+    productBox.style.display = "none";
+  }
+
+  const cultureA = document.getElementById("sbCountryCultureLink");
+  if(hasCulture){
+    cultureA.style.display = "block";
+    cultureA.textContent = "📖 " + culture.title;
+    cultureA.href = culture.url;
+    cultureA.onclick = ()=> trackEvent("country_culture_click", { country_code: isoCode });
+  } else {
+    cultureA.style.display = "none";
+  }
 }
 function renderChecklist(code){
   const wrap = document.getElementById("sbChecklist");
@@ -2515,6 +2597,7 @@ document.addEventListener("keydown", e=>{
 
 loadState();
 initCloudSync();
+loadCountryRecommendations();
 window.addEventListener("load", initCloudSync);
 
 /* ---------- In-app browser helper (Threads/Instagram/etc.) ---------- */
