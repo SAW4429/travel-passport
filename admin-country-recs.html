@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>관리자 도구 · 국가 추천 데이터 입력 보조</title>
+<style>
+  :root{
+    --navy:#0E1B30; --paper:#F6F1E4; --paper-2:#ECE3CC; --ink:#1B140A; --ink-soft:#4E4534;
+    --gold:#CDA53D; --border:#DFCFA0; --ok:#1F9D53; --warn:#B03D28;
+    --font-sans:'Pretendard','Noto Sans KR','Apple SD Gothic Neo',-apple-system,BlinkMacSystemFont,sans-serif;
+    --font-mono:'JetBrains Mono','Courier New',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:24px;background:var(--paper);color:var(--ink);font-family:var(--font-sans);line-height:1.5;}
+  h1{font-size:20px;margin:0 0 4px;}
+  .sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
+  .banner{background:#fff3cd;border:1px solid #e0c36a;color:#5c4a12;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;max-width:640px;margin-bottom:24px;}
+  label{display:block;font-size:13px;font-weight:600;margin:14px 0 4px;}
+  label:first-child{margin-top:0;}
+  input[type=text],input[type=url],select{
+    width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;
+    font-family:inherit;font-size:14px;background:#fffdf8;color:var(--ink);
+  }
+  input[readonly]{background:var(--paper-2);color:var(--ink-soft);}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+  .hint.dup{color:var(--warn);font-weight:600;}
+  fieldset{border:1px dashed var(--border);border-radius:8px;margin:18px 0 0;padding:12px 14px 16px;}
+  legend{font-size:13px;font-weight:700;padding:0 6px;}
+  button{
+    font-family:inherit;cursor:pointer;border:none;border-radius:8px;
+    padding:10px 18px;font-size:14px;font-weight:700;background:var(--navy);color:#fff;
+  }
+  button:hover{opacity:.9;}
+  button.secondary{background:var(--gold);color:var(--ink);}
+  #genBtn{margin-top:18px;}
+  .errors{margin-top:12px;}
+  .errors div{color:var(--warn);font-size:13px;font-weight:600;margin-top:4px;}
+  #resultBox{display:none;margin-top:18px;}
+  #resultBox pre{
+    background:#111;color:#d7f5df;padding:14px;border-radius:8px;overflow:auto;
+    font-family:var(--font-mono);font-size:13px;max-height:320px;
+  }
+  #copyBtn{margin-top:8px;}
+  #copyBtn.copied{background:var(--ok);}
+  table{border-collapse:collapse;width:100%;max-width:640px;font-size:13px;}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);}
+  th{color:var(--ink-soft);font-weight:700;}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;margin-right:4px;}
+  .tag.on{background:#dff5e6;color:var(--ok);}
+  .tag.off{background:#f0ece0;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+
+<h1>국가 추천 데이터 입력 보조 도구</h1>
+<p class="sub">country-recommendations.json에 붙여넣을 JSON 조각을 생성합니다. 이 도구는 파일을 직접 수정하지 않습니다.</p>
+<div class="banner">⚠ 이 페이지는 관리자 전용 내부 도구입니다. 방문자에게 공개하거나 링크를 걸지 마세요.</div>
+
+<div class="card">
+  <label for="countrySelect">국가</label>
+  <select id="countrySelect"><option value="">불러오는 중...</option></select>
+  <div class="hint" id="dupHint"></div>
+
+  <label for="countryName">국가명 (자동 입력)</label>
+  <input type="text" id="countryName" readonly placeholder="국가를 선택하면 자동으로 채워져요">
+
+  <fieldset>
+    <legend>상품 추천 (선택)</legend>
+    <label for="productReason">추천 이유</label>
+    <input type="text" id="productReason" placeholder="예: 밤낮 기온차가 커서 저녁에 급격히 추워짐">
+    <label for="productName">상품명</label>
+    <input type="text" id="productName" placeholder="예: 차량용 무릎담요">
+  </fieldset>
+
+  <fieldset>
+    <legend>문화/주의사항 글 (선택)</legend>
+    <label for="cultureTitle">글 제목</label>
+    <input type="text" id="cultureTitle" placeholder="예: 몽골 여행 전 알아두면 좋은 예절과 주의사항">
+    <label for="cultureUrl">글 URL</label>
+    <input type="url" id="cultureUrl" placeholder="https://...">
+  </fieldset>
+
+  <button id="genBtn">JSON 생성</button>
+  <div class="errors" id="errors"></div>
+
+  <div id="resultBox">
+    <label>생성된 JSON (country-recommendations.json에 붙여넣으세요)</label>
+    <pre id="resultText"></pre>
+    <button id="copyBtn" class="secondary">복사</button>
+  </div>
+</div>
+
+<div class="card">
+  <label style="margin:0 0 8px;">이미 등록된 국가</label>
+  <div id="registeredList">불러오는 중...</div>
+</div>
+
+<script>
+let COUNTRIES = [];       // [{code, name}]
+let REGISTERED = {};      // country-recommendations.json 내용
+
+function el(id){ return document.getElementById(id); }
+
+// index.html이 이미 갖고 있는 WORLD_DATA / DETAIL_ARRAYS(BLOB_NAMES) 데이터를 그대로 읽어와
+// 새 국가 코드 목록을 임의로 만들지 않는다.
+async function loadCountryList(){
+  const select = el("countrySelect");
+  try{
+    const res = await fetch("index.html", { cache: "no-store" });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    const worldTag = doc.getElementById("worldData");
+    const worldRaw = worldTag ? JSON.parse(worldTag.textContent) : [];
+    const worldCountries = worldRaw
+      .filter(w => w.code !== "410" && w.iso2 && w.name)
+      .map(w => ({ code: w.iso2.toUpperCase(), name: w.name }));
+
+    const blobMatch = html.match(/const BLOB_NAMES\s*=\s*(\{[\s\S]*?\});/);
+    let detailCountries = [];
+    if(blobMatch){
+      const blobNames = new Function("return (" + blobMatch[1] + ")")();
+      detailCountries = Object.keys(blobNames)
+        .filter(k => k !== "kr")
+        .map(k => ({ code: k.toUpperCase(), name: blobNames[k].name }));
+    }
+
+    const byCode = new Map();
+    worldCountries.concat(detailCountries).forEach(c => { if(c.code && c.name) byCode.set(c.code, c.name); });
+    COUNTRIES = Array.from(byCode, ([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+
+    select.innerHTML = '<option value="">국가를 선택하세요</option>' +
+      COUNTRIES.map(c => `<option value="${c.code}">${c.name} (${c.code})</option>`).join("");
+  }catch(e){
+    select.innerHTML = '<option value="">불러오기 실패 — index.html 확인 필요</option>';
+    console.warn("국가 목록을 불러오지 못했어요:", e);
+  }
+}
+
+async function loadRegistered(){
+  const box = el("registeredList");
+  try{
+    const res = await fetch("country-recommendations.json", { cache: "no-store" });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    REGISTERED = (data && typeof data === "object") ? data : {};
+    renderRegistered();
+  }catch(e){
+    box.textContent = "country-recommendations.json을 불러오지 못했어요 (파일이 없거나 서버 환경 문제일 수 있어요).";
+    console.warn(e);
+  }
+}
+
+function renderRegistered(){
+  const box = el("registeredList");
+  const codes = Object.keys(REGISTERED);
+  if(!codes.length){ box.textContent = "아직 등록된 국가가 없어요."; return; }
+  const rows = codes.map(code => {
+    const rec = REGISTERED[code] || {};
+    const hasProduct = !!(rec.product && rec.product.name);
+    const hasCulture = !!(rec.culture && rec.culture.title && rec.culture.url);
+    return `<tr>
+      <td>${code}</td>
+      <td>${rec.countryName || ""}</td>
+      <td><span class="tag ${hasProduct ? "on" : "off"}">상품 ${hasProduct ? "O" : "X"}</span>
+          <span class="tag ${hasCulture ? "on" : "off"}">문화 ${hasCulture ? "O" : "X"}</span></td>
+    </tr>`;
+  }).join("");
+  box.innerHTML = `<table><thead><tr><th>코드</th><th>국가명</th><th>등록 항목</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function updateDupHint(){
+  const code = el("countrySelect").value;
+  const hint = el("dupHint");
+  if(code && REGISTERED[code]){
+    hint.textContent = "⚠ 이미 등록된 국가예요 (기존 값을 덮어쓰게 됩니다).";
+    hint.className = "hint dup";
+  } else {
+    hint.textContent = "";
+    hint.className = "hint";
+  }
+}
+
+el("countrySelect").addEventListener("change", () => {
+  const code = el("countrySelect").value;
+  const found = COUNTRIES.find(c => c.code === code);
+  el("countryName").value = found ? found.name : "";
+  updateDupHint();
+});
+
+function showErrors(list){
+  el("errors").innerHTML = list.map(m => `<div>⚠ ${m}</div>`).join("");
+}
+
+el("genBtn").addEventListener("click", () => {
+  el("resultBox").style.display = "none";
+  const code = el("countrySelect").value;
+  const countryName = el("countryName").value;
+  const reason = el("productReason").value.trim();
+  const productName = el("productName").value.trim();
+  const cultureTitle = el("cultureTitle").value.trim();
+  const cultureUrl = el("cultureUrl").value.trim();
+
+  const errors = [];
+  if(!code) errors.push("국가를 선택하세요.");
+  if(!productName && !(cultureTitle && cultureUrl)) errors.push("상품(상품명) 또는 문화 정보(제목+URL) 중 최소 하나는 입력하세요.");
+  if(cultureUrl && !/^https?:\/\//i.test(cultureUrl)) errors.push("문화 정보 URL은 http:// 또는 https://로 시작해야 해요.");
+
+  if(errors.length){ showErrors(errors); return; }
+  showErrors([]);
+
+  const entry = { countryName };
+  if(productName){
+    entry.product = { reason, name: productName, widgetHtml: "" };
+  }
+  if(cultureTitle && cultureUrl){
+    entry.culture = { title: cultureTitle, url: cultureUrl };
+  }
+
+  const snippet = JSON.stringify({ [code]: entry }, null, 2);
+  el("resultText").textContent = snippet;
+  el("resultBox").style.display = "block";
+  el("copyBtn").textContent = "복사";
+  el("copyBtn").classList.remove("copied");
+});
+
+el("copyBtn").addEventListener("click", async () => {
+  const text = el("resultText").textContent;
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand("copy"); }catch(e2){}
+    document.body.removeChild(ta);
+  }
+  const btn = el("copyBtn");
+  btn.textContent = "복사됨 ✓";
+  btn.classList.add("copied");
+});
+
+loadCountryList();
+loadRegistered().then(updateDupHint);
+</script>
+</body>
+</html>

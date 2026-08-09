@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /admin-country-recs.html
 
 Sitemap: https://saw4429.github.io/travel-passport/sitemap.xml
