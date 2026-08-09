@@ -591,7 +591,7 @@ button{font-family:inherit;}
 
     <div class="sidebar" id="sidebar">
       <div class="sidebar-head">
-        <button class="sidebar-close" id="sidebarClose">✕</button>
+        <button class="sidebar-close" id="sidebarClose" aria-label="닫기">✕</button>
         <div class="sidebar-eyebrow" id="sbProv">미국</div>
         <h2 id="sbName">유타</h2>
         <p class="eng" id="sbEng">Utah</p>
@@ -2227,6 +2227,7 @@ function renderChecklist(code){
     const del = document.createElement("button");
     del.className = "del";
     del.textContent = "✕";
+    del.setAttribute("aria-label", "'" + item.text + "' 삭제");
     del.addEventListener("click", ()=>{
       state.checklist[code] = state.checklist[code].filter(i=>i.id !== item.id);
       saveState(); renderChecklist(code);
