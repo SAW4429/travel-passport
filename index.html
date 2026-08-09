@@ -284,6 +284,9 @@ button{font-family:inherit;}
 .add-item-row input:focus{outline:none;border-color:var(--gold);}
 .add-item-row button{background:var(--navy);color:var(--gold-light);border:none;border-radius:9px;padding:0 16px;font-size:13px;font-weight:700;cursor:pointer;transition:transform .1s ease;}
 .add-item-row button:hover{transform:translateY(-1px);}
+.prep-collapse{margin-top:20px;border-top:1px solid var(--paper-3);padding-top:14px;}
+.prep-collapse summary{font-family:var(--font-mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold-2);font-weight:700;cursor:pointer;}
+.prep-slots{margin-top:10px;display:flex;flex-direction:column;gap:8px;min-height:4px;}
 .visit-date{font-size:12px;color:var(--stamp-red);font-family:var(--font-mono);margin-top:6px;font-weight:600;}
 
 .modal-overlay{
@@ -594,6 +597,15 @@ button{font-family:inherit;}
           <input type="text" id="sbAddInput" placeholder="가고 싶은 장소 추가하기">
           <button id="sbAddBtn">추가</button>
         </div>
+        <details class="prep-collapse" id="sbPrepSection">
+          <summary>여행 준비물 체크</summary>
+          <div class="prep-slots">
+            <!-- 쿠팡 위젯 자리 1 -->
+            <!-- 쿠팡 위젯 자리 2 -->
+            <!-- 쿠팡 위젯 자리 3 -->
+            <!-- 쿠팡 위젯 자리 4 -->
+          </div>
+        </details>
       </div>
     </div>
   </div>
@@ -817,6 +829,12 @@ const MONETIZATION_CONFIG = {
   },
   GA_MEASUREMENT_ID: "G-PWVD8HY990",       // 예: "G-XXXXXXXXXX"
   WAITLIST_ENDPOINT: ""        // 예: "https://formspree.io/f/xxxxxxx"
+};
+
+// 쿠팡파트너스 위젯 자리 관리용 뼈대. 실제 위젯 코드는 사이드바의
+// "쿠팡 위젯 자리 N" HTML 주석 위치에 사람이 직접 채워 넣습니다.
+const COUPANG_CONFIG = {
+  widgets: [] // 예: { slot: 1, html: "(쿠팡 위젯 코드)" }
 };
 
 function trackEvent(name, params){
@@ -2527,6 +2545,11 @@ window.addEventListener("load", initCloudSync);
     sessionStorage.setItem("iabBannerDismissed", "1");
   });
 })();
+
+if(!FEATURE_FLAGS.coupangWidgets){
+  const prepSection = document.getElementById("sbPrepSection");
+  if(prepSection) prepSection.style.display = "none";
+}
 
 /* ---------- PWA: offline app-shell caching ---------- */
 if("serviceWorker" in navigator){
