@@ -94,6 +94,21 @@
 </div>
 
 <div class="card">
+  <label for="bulkInput" style="margin:0 0 4px;">일괄 등록 (여러 국가 한 번에)</label>
+  <p class="sub" style="margin:0 0 10px;">한 줄에 국가 하나씩, 콤마(,) 또는 탭으로 구분: <b>국가코드, 상품이유, 상품명, 문화제목, 문화URL</b><br>상품 또는 문화 중 비워둘 칸은 그냥 빈 채로 두세요. (엑셀/스프레드시트에서 복사해 붙여넣어도 됩니다)</p>
+  <textarea id="bulkInput" rows="6" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:var(--font-mono);font-size:12.5px;background:#fffdf8;color:var(--ink);" placeholder="MN, 밤낮 기온차가 커서 저녁에 급격히 추워짐, 차량용 무릎담요, 몽골 여행 전 알아두면 좋은 예절과 주의사항, https://example.com/mn
+JP,,,온천 이용 시 문신 관련 주의사항,https://example.com/jp"></textarea>
+  <button id="bulkGenBtn" style="margin-top:12px;">일괄 JSON 생성</button>
+  <div class="errors" id="bulkErrors"></div>
+
+  <div id="bulkResultBox" style="display:none;margin-top:18px;">
+    <label>생성된 JSON (country-recommendations.json에 붙여넣으세요)</label>
+    <pre id="bulkResultText"></pre>
+    <button id="bulkCopyBtn" class="secondary">복사</button>
+  </div>
+</div>
+
+<div class="card">
   <label style="margin:0 0 8px;">이미 등록된 국가</label>
   <div id="registeredList">불러오는 중...</div>
 </div>
@@ -242,6 +257,71 @@ el("copyBtn").addEventListener("click", async () => {
     document.body.removeChild(ta);
   }
   const btn = el("copyBtn");
+  btn.textContent = "복사됨 ✓";
+  btn.classList.add("copied");
+});
+
+function parseBulkLine(line){
+  return line.includes("\t") ? line.split("\t") : line.split(",");
+}
+
+el("bulkGenBtn").addEventListener("click", () => {
+  el("bulkResultBox").style.display = "none";
+  const lines = el("bulkInput").value.split("\n").map(l => l.trim()).filter(l => l.length);
+  const validCodes = new Set(COUNTRIES.map(c => c.code));
+  const errors = [];
+  const result = {};
+
+  lines.forEach((line, i) => {
+    const rowNum = i + 1;
+    const cells = parseBulkLine(line).map(c => c.trim());
+    const [code, reason = "", productName = "", cultureTitle = "", cultureUrl = ""] = cells;
+    if(i === 0 && code && !validCodes.has(code.toUpperCase()) && /[가-힣a-zA-Z]/.test(code) && code.length > 2){
+      return; // 헤더 줄로 보이면(국가코드가 아닌 긴 텍스트) 건너뜀
+    }
+    if(!code){ errors.push(rowNum + "번째 줄: 국가 코드가 비어있어요."); return; }
+    const upperCode = code.toUpperCase();
+    if(!validCodes.has(upperCode)){ errors.push(rowNum + "번째 줄: '" + code + "'는 존재하지 않는 국가 코드예요."); return; }
+    if(!productName.trim() && !(cultureTitle.trim() && cultureUrl.trim())){
+      errors.push(rowNum + "번째 줄 (" + upperCode + "): 상품(상품명) 또는 문화 정보(제목+URL) 중 최소 하나는 입력하세요.");
+      return;
+    }
+    if(cultureUrl.trim() && !/^https?:\/\//i.test(cultureUrl.trim())){
+      errors.push(rowNum + "번째 줄 (" + upperCode + "): 문화 정보 URL은 http:// 또는 https://로 시작해야 해요.");
+      return;
+    }
+
+    const found = COUNTRIES.find(c => c.code === upperCode);
+    const entry = { countryName: found ? found.name : "" };
+    if(productName.trim()) entry.product = { reason: reason.trim(), name: productName.trim(), widgetHtml: "" };
+    if(cultureTitle.trim() && cultureUrl.trim()) entry.culture = { title: cultureTitle.trim(), url: cultureUrl.trim() };
+    result[upperCode] = entry;
+  });
+
+  const errBox = el("bulkErrors");
+  errBox.innerHTML = errors.map(m => `<div>⚠ ${m}</div>`).join("");
+
+  if(Object.keys(result).length){
+    el("bulkResultText").textContent = JSON.stringify(result, null, 2);
+    el("bulkResultBox").style.display = "block";
+    el("bulkCopyBtn").textContent = "복사";
+    el("bulkCopyBtn").classList.remove("copied");
+  }
+});
+
+el("bulkCopyBtn").addEventListener("click", async () => {
+  const text = el("bulkResultText").textContent;
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand("copy"); }catch(e2){}
+    document.body.removeChild(ta);
+  }
+  const btn = el("bulkCopyBtn");
   btn.textContent = "복사됨 ✓";
   btn.classList.add("copied");
 });

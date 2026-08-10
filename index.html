@@ -529,6 +529,31 @@ button{font-family:inherit;}
       <input id="searchInput" type="text" placeholder="지역/국가 이름으로 검색 (예: 부산, 오사카, 하노이)" autocomplete="off">
       <div class="search-results" id="searchResults"><div>유타 <span class="sr-prov">· 미국</span></div><div>아유타야 <span class="sr-prov">· 태국</span></div></div>
     </div>
+    <div style="position:relative;">
+      <button class="icon-btn" id="exploreBtn" aria-label="완료율/대륙별 탐색" title="완료율·대륙별로 국가 탐색">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><polygon points="15 9 13 13 9 15 11 11 15 9"></polygon></svg>
+        <span class="btn-label">탐색</span>
+      </button>
+      <div class="search-results" id="explorePanel" style="top:48px;left:auto;right:0;width:300px;">
+        <div style="padding:10px 12px;display:flex;gap:8px;border-bottom:1px solid var(--paper-3);">
+          <select id="exploreContinent" style="flex:1;min-width:0;font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid var(--paper-3);background:var(--paper);color:var(--ink);">
+            <option value="all">전체 대륙</option>
+            <option value="아시아">아시아</option>
+            <option value="유럽">유럽</option>
+            <option value="아메리카">아메리카</option>
+            <option value="아프리카">아프리카</option>
+            <option value="오세아니아">오세아니아</option>
+            <option value="남극">남극</option>
+          </select>
+          <select id="exploreSort" style="flex:1;min-width:0;font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid var(--paper-3);background:var(--paper);color:var(--ink);">
+            <option value="rate-desc">완료율 높은순</option>
+            <option value="rate-asc">완료율 낮은순</option>
+            <option value="name">이름순</option>
+          </select>
+        </div>
+        <div id="exploreList"></div>
+      </div>
+    </div>
     <div class="progress-chip">
       <span id="progressLabel">0 / 1694</span>
       <div class="progress-track"><div class="progress-fill" id="progressFill" style="width: 0%;"></div></div>
@@ -2511,7 +2536,8 @@ searchInput.addEventListener("input", ()=>{
     const eyebrow = eyebrowOf(r);
     const div = document.createElement("div");
     div.innerHTML = r.name + (eyebrow ? ' <span class="sr-prov">· '+eyebrow+'</span>' : "");
-    div.addEventListener("click", ()=>{
+    div.addEventListener("click", (e)=>{
+      e.stopPropagation();
       searchResults.classList.remove("open");
       searchInput.value = "";
       openSidebar(r.code);
@@ -2527,6 +2553,77 @@ document.addEventListener("click", e=>{
     searchResults.classList.remove("open");
   }
 });
+
+/* ---------- 국가 탐색: 완료율순 정렬 / 대륙별 필터 ---------- */
+function buildExploreCountries(){
+  const list = [];
+  WORLD_DATA.forEach(r=>{
+    list.push({ name: r.name, continent: r.region || "", pct: state.statuses[r.code] === "visited" ? 100 : 0, isBlob: false, code: r.code });
+  });
+  DETAIL_KEYS.filter(key => key !== "kr").forEach(key=>{
+    const subs = ALL_REGIONS.filter(r => r.countryKey === key);
+    if(!subs.length) return;
+    const visited = subs.filter(r => state.statuses[r.code] === "visited").length;
+    list.push({ name: (BLOB_NAMES[key] && BLOB_NAMES[key].name) || key, continent: DETAIL_CONTINENT[key] || "", pct: Math.round(visited/subs.length*100), isBlob: true, code: key });
+  });
+  return list;
+}
+function renderExploreList(){
+  const continent = document.getElementById("exploreContinent").value;
+  const sort = document.getElementById("exploreSort").value;
+  let list = buildExploreCountries();
+  if(continent !== "all") list = list.filter(c => c.continent === continent);
+  if(sort === "rate-desc") list.sort((a,b)=> b.pct - a.pct || a.name.localeCompare(b.name,"ko"));
+  else if(sort === "rate-asc") list.sort((a,b)=> a.pct - b.pct || a.name.localeCompare(b.name,"ko"));
+  else list.sort((a,b)=> a.name.localeCompare(b.name,"ko"));
+
+  const box = document.getElementById("exploreList");
+  box.innerHTML = "";
+  if(!list.length){
+    const empty = document.createElement("div");
+    empty.textContent = "해당하는 국가가 없어요.";
+    box.appendChild(empty);
+    return;
+  }
+  list.slice(0,60).forEach(c=>{
+    const div = document.createElement("div");
+    div.innerHTML = c.name + ' <span class="sr-prov">· ' + c.pct + '%</span>';
+    div.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      document.getElementById("explorePanel").classList.remove("open");
+      if(c.isBlob){
+        focusBlob(c.code);
+      } else {
+        openSidebar(c.code);
+        focusRegion(c.code);
+        pingRegion(c.code);
+      }
+    });
+    box.appendChild(div);
+  });
+}
+const exploreBtn = document.getElementById("exploreBtn");
+const explorePanel = document.getElementById("explorePanel");
+exploreBtn.addEventListener("click", (e)=>{
+  e.stopPropagation();
+  const willOpen = !explorePanel.classList.contains("open");
+  explorePanel.classList.toggle("open");
+  if(willOpen) renderExploreList();
+});
+document.getElementById("exploreContinent").addEventListener("change", ()=>{
+  trackEvent("map_filter_used", { continent: document.getElementById("exploreContinent").value });
+  renderExploreList();
+});
+document.getElementById("exploreSort").addEventListener("change", ()=>{
+  trackEvent("map_sort_used", { sort: document.getElementById("exploreSort").value });
+  renderExploreList();
+});
+document.addEventListener("click", e=>{
+  if(explorePanel.classList.contains("open") && !explorePanel.contains(e.target) && e.target !== exploreBtn && !exploreBtn.contains(e.target)){
+    explorePanel.classList.remove("open");
+  }
+});
+
 function focusBlob(key){
   const b = BLOBS[key];
   if(!b) return;
