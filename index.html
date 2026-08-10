@@ -937,6 +937,23 @@ function trackEvent(name, params){
     if(window.gtag) gtag("event", name, params || {});
   }catch(e){}
 }
+
+/* ---------- 에러 모니터링: 전역 에러를 GA 이벤트(js_error)로 전송 ---------- */
+window.addEventListener("error", (e)=>{
+  trackEvent("js_error", {
+    message: String(e.message || "").slice(0, 150),
+    source: String(e.filename || "").split("/").pop(),
+    line: e.lineno || 0
+  });
+});
+window.addEventListener("unhandledrejection", (e)=>{
+  const reason = e.reason && e.reason.message ? e.reason.message : e.reason;
+  trackEvent("js_error", {
+    message: ("promise: " + String(reason || "")).slice(0, 150),
+    source: "unhandledrejection",
+    line: 0
+  });
+});
 (function initAnalytics(){
   const id = MONETIZATION_CONFIG.GA_MEASUREMENT_ID;
   if(!id) return;
