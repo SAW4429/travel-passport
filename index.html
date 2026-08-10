@@ -653,12 +653,7 @@ button{font-family:inherit;}
         </div>
         <details class="prep-collapse" id="sbPrepSection">
           <summary>여행 준비물 체크</summary>
-          <div class="prep-slots">
-            <!-- 쿠팡 위젯 자리 1 -->
-            <!-- 쿠팡 위젯 자리 2 -->
-            <!-- 쿠팡 위젯 자리 3 -->
-            <!-- 쿠팡 위젯 자리 4 -->
-          </div>
+          <div class="prep-slots" id="sbPrepSlots"></div>
         </details>
       </div>
     </div>
@@ -894,11 +889,48 @@ const MONETIZATION_CONFIG = {
   WAITLIST_ENDPOINT: ""        // 예: "https://formspree.io/f/xxxxxxx"
 };
 
-// 쿠팡파트너스 위젯 자리 관리용 뼈대. 실제 위젯 코드는 사이드바의
-// "쿠팡 위젯 자리 N" HTML 주석 위치에 사람이 직접 채워 넣습니다.
+// 쿠팡파트너스 위젯 로테이션 뼈대. "여행 준비물 체크" 섹션(범용 슬롯) 전용이며
+// country-recommendations.json 기반 국가별 추천 섹션과는 별개 시스템이다.
+// 실제 상품이 정해지기 전까지는 각 값을 빈 배열로 두면 된다 — 값이 없으면 조용히 아무것도 안 뜬다.
+// 우선순위: 보고 있는 지역의 대륙에 맞는 위젯이 있으면 그것 → 없으면 현재 계절(월 기준) 위젯 → 그것도 없으면 fallback.
 const COUPANG_CONFIG = {
-  widgets: [] // 예: { slot: 1, html: "(쿠팡 위젯 코드)" }
+  byContinent: {
+    // 예: "아시아": ["<div>...쿠팡 위젯 코드...</div>"]
+    "아시아": [], "유럽": [], "아메리카": [], "아프리카": [], "오세아니아": [], "남극": []
+  },
+  bySeason: {
+    // 예: winter: ["<div>...쿠팡 위젯 코드...</div>"]
+    spring: [], summer: [], autumn: [], winter: []
+  },
+  fallback: [] // 위 두 조건에 다 해당 없을 때 노출할 기본 위젯
 };
+function currentSeason(){
+  const m = new Date().getMonth() + 1;
+  if(m >= 3 && m <= 5) return "spring";
+  if(m >= 6 && m <= 8) return "summer";
+  if(m >= 9 && m <= 11) return "autumn";
+  return "winter";
+}
+function pickPrepWidgets(r){
+  const continent = r ? continentOf(r) : null;
+  if(continent && Array.isArray(COUPANG_CONFIG.byContinent[continent]) && COUPANG_CONFIG.byContinent[continent].length){
+    return COUPANG_CONFIG.byContinent[continent];
+  }
+  const season = COUPANG_CONFIG.bySeason[currentSeason()];
+  if(Array.isArray(season) && season.length) return season;
+  return Array.isArray(COUPANG_CONFIG.fallback) ? COUPANG_CONFIG.fallback : [];
+}
+function renderPrepSlots(r){
+  const wrap = document.getElementById("sbPrepSlots");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+  pickPrepWidgets(r).forEach(html=>{
+    if(typeof html !== "string" || !html.trim()) return;
+    const slot = document.createElement("div");
+    try{ slot.innerHTML = html; }catch(e){ return; }
+    wrap.appendChild(slot);
+  });
+}
 
 function trackEvent(name, params){
   try{
@@ -2191,6 +2223,7 @@ function renderSidebar(code){
     affNote.style.display = "none";
   }
   renderCountryRecs(code, r);
+  renderPrepSlots(r);
   renderChecklist(code);
 }
 function renderCountryRecs(code, r){
