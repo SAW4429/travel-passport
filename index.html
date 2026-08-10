@@ -662,7 +662,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.9.0</span>
+    · <span id="appVersion" style="opacity:.6;">v2.9.1</span>
   </div>
 </div>
 
@@ -830,6 +830,14 @@ button{font-family:inherit;}
   <span style="display:flex;gap:6px;flex-shrink:0;">
     <button id="notifyAllowBtn" style="background:#CDA53D;color:#1B140A;border:none;padding:6px 10px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">알림 받기</button>
     <button id="notifyDismissBtn" style="background:transparent;border:1px solid rgba(246,241,228,.4);color:#F6F1E4;border-radius:8px;padding:6px 9px;cursor:pointer;">괜찮아요</button>
+  </span>
+</div>
+
+<div id="swUpdateBanner" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1B140A;color:#F6F1E4;font-size:12.5px;padding:11px 14px;align-items:center;gap:10px;justify-content:space-between;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+  <span style="line-height:1.4;">새 버전이 있어요. 새로고침 하시겠어요?</span>
+  <span style="display:flex;gap:6px;flex-shrink:0;">
+    <button id="swUpdateReloadBtn" style="background:#CDA53D;color:#1B140A;border:none;padding:6px 10px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;">새로고침</button>
+    <button id="swUpdateDismissBtn" style="background:transparent;border:1px solid rgba(246,241,228,.4);color:#F6F1E4;border-radius:8px;padding:6px 9px;cursor:pointer;">나중에</button>
   </span>
 </div>
 
@@ -2857,12 +2865,39 @@ if(!FEATURE_FLAGS.coupangWidgets){
   if(prepSection) prepSection.style.display = "none";
 }
 
-/* ---------- PWA: offline app-shell caching ---------- */
+/* ---------- PWA: offline app-shell caching + 새 버전 감지 시 갱신 안내 ---------- */
 if("serviceWorker" in navigator){
   window.addEventListener("load", ()=>{
-    navigator.serviceWorker.register("service-worker.js").catch(e=>console.warn("서비스워커 등록 실패", e));
+    navigator.serviceWorker.register("service-worker.js").then(reg=>{
+      reg.addEventListener("updatefound", ()=>{
+        const nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener("statechange", ()=>{
+          // 이미 이 페이지를 제어 중인 이전 서비스워커가 있는데 새 버전이 설치됐다면 = 진짜 업데이트
+          if(nw.state === "installed" && navigator.serviceWorker.controller){
+            // 같은 자리에 뜨는 다른 배너(PWA 설치/알림 권한)와 겹치지 않게 먼저 숨긴다
+            const pwaB = document.getElementById("pwaBanner");
+            const notifyB = document.getElementById("notifyBanner");
+            if(pwaB) pwaB.style.display = "none";
+            if(notifyB) notifyB.style.display = "none";
+            const banner = document.getElementById("swUpdateBanner");
+            if(banner) banner.style.display = "flex";
+          }
+        });
+      });
+      document.addEventListener("visibilitychange", ()=>{
+        if(document.visibilityState === "visible") reg.update().catch(()=>{});
+      });
+    }).catch(e=>console.warn("서비스워커 등록 실패", e));
   });
 }
+document.getElementById("swUpdateReloadBtn").addEventListener("click", ()=>{
+  document.getElementById("swUpdateBanner").style.display = "none";
+  location.reload();
+});
+document.getElementById("swUpdateDismissBtn").addEventListener("click", ()=>{
+  document.getElementById("swUpdateBanner").style.display = "none";
+});
 
 /* ---------- PWA: "홈 화면에 추가" 유도 배너 (한 번만, 은근하게) ---------- */
 (function(){

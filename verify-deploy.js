@@ -87,6 +87,20 @@ check("appVersion과 CHANGELOG.md 최신 버전이 일치함", ()=>{
   return verMatch[1] === chMatch[1];
 });
 
+// --- 서비스워커 캐시 버전: index.html의 appVersion과 반드시 같이 올라가야 이전 캐시가 무효화됨 ---
+check("service-worker.js의 캐시 버전이 appVersion과 일치함 (안 맞으면 배포해도 이전 버전이 캐시에 남음)", ()=>{
+  const verMatch = html.match(/id="appVersion"[^>]*>v([\d.]+)</);
+  const sw = read("service-worker.js");
+  const swMatch = sw.match(/APP_VERSION\s*=\s*"([\d.]+)"/);
+  if(!verMatch || !swMatch) return false;
+  return verMatch[1] === swMatch[1];
+});
+check("service-worker.js의 CACHE_NAME이 APP_VERSION을 포함함", ()=>{
+  const sw = read("service-worker.js");
+  return /CACHE_NAME\s*=\s*"[^"]+"\s*\+\s*APP_VERSION/.test(sw);
+});
+check("index.html에 새 버전 감지 시 갱신 안내 배너(swUpdateBanner)가 있음", ()=> html.includes('id="swUpdateBanner"') && html.includes("updatefound"));
+
 console.log("");
 if(failed){
   console.log(failed + "개 항목 실패");

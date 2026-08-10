@@ -1,5 +1,7 @@
-// ponytail: single shared cache name, bump the suffix by hand when releasing a new app version
-const CACHE_NAME = "travel-passport-shell-v1";
+// index.html의 appVersion과 항상 같이 올릴 것 — 버전이 바뀌면 캐시 이름도 바뀌어서
+// activate 단계에서 이전 캐시가 자동으로 지워지고 새로 받아온다.
+const APP_VERSION = "2.9.1";
+const CACHE_NAME = "travel-passport-v" + APP_VERSION;
 const SHELL_FILES = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {

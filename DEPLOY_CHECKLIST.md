@@ -32,6 +32,8 @@ node verify-deploy.js
 - [ ] 서비스워커 등록 성공 (콘솔에 404/에러 없음)
 - [ ] `manifest.json`, `icon.svg` 정상 로드
 - [ ] "홈 화면에 추가" 배너가 조건 충족 시 뜨고, 닫으면 다시 안 뜸
+- [ ] 🤖 **매 배포마다**: `service-worker.js`의 `APP_VERSION`을 `index.html`의 `appVersion`과 동일하게 올렸는지 확인 (안 올리면 이전 캐시가 안 지워지고 사용자가 구버전을 봄)
+- [ ] 이미 열려있는 탭에서 새 버전 배포 시 "새 버전이 있어요" 배너가 뜨고, 새로고침하면 최신 버전이 반영됨
 
 ## 5. 국가별 추천 섹션 (country-recommendations.json)
 - [ ] 🤖 `country-recommendations.json` 유효한 JSON
