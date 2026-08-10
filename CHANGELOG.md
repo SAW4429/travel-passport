@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.8.0 (2026-08-09)
+- 전역 에러 모니터링 추가: `window`의 `error`/`unhandledrejection`을 잡아 GA 이벤트 `js_error`(message/source/line)로 전송. 유료 에러 모니터링 서비스 없이 기존 GA만 활용
+- `DEPLOY_CHECKLIST.md` 추가: 지도·여권·통계·챌린지·PWA·내보내기/가져오기·공유·쿠팡 슬롯·국가별 추천·온보딩·관리자 도구·탐색·에러 모니터링 등 지금까지 만든 모든 기능의 배포 전 확인 목록
+- `verify-deploy.js` 추가: 프레임워크 없는 node 스크립트로 JSON 유효성, index.html 핵심 DOM/함수 존재, 관리자 도구 비노출 규칙, 버전 일관성을 자동 점검 (`node verify-deploy.js`)
+
 ## v2.7.0 (2026-08-09)
 - "여행 준비물 체크" 범용 쿠팡 슬롯을 계절(현재 월)·대륙별 로테이션 구조로 전환: `COUPANG_CONFIG.byContinent`/`bySeason`/`fallback` (전부 빈 배열 — 실제 상품 데이터 없이 구조만 마련, 사람이 나중에 채움). 국가별 추천(country-recommendations.json) 섹션과는 완전히 별개 시스템으로 유지
 - 성능 최적화(대용량 지역 데이터 지연 로딩) 실적용은 보류: 1단계 점검에서 확인한 대로 SVG 경로 렌더링(DOM 생성)은 이미 `requestIdleCallback` 청크 분할로 처리 중이었으나, 남은 병목은 26개국 상세지도 JSON 자체를 페이지 로드 시 한꺼번에 `JSON.parse`하는 부분. 이걸 실제로 지연 로딩하려면 데이터를 국가별 파일로 분리하고, `ALL_REGIONS`/`BY_CODE`를 전제로 하는 검색·통계·업적·탐색 패널 등 코드 전반이 "일부만 로드된 상태"를 견디도록 구조 변경이 필요해 위험도가 높다고 판단, 이번엔 보류하고 구체적 이유만 기록함
