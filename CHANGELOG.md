@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9.2 (2026-08-11)
+- 일본 국가별 추천 데이터 추가 (country-recommendations.json)
+- country-recommendations.json이 GitHub 웹 UI로 직접 수정되면서 JSON 문법이 깨져있던 것(별개의 JSON 객체 두 개가 이어붙은 형태)을 발견해 하나의 유효한 객체로 복구
+
 ## v2.9.1 (2026-08-09)
 - 서비스워커 캐시 갱신 전략 수정: `CACHE_NAME`이 고정값(`travel-passport-shell-v1`)이라 매 배포마다 수동으로 안 올리면 이전 캐시가 절대 무효화되지 않던 문제 발견. `APP_VERSION`을 도입해 `index.html`의 `appVersion`과 함께 올리도록 하고, 캐시 이름에 버전을 포함시켜(`travel-passport-v` + 버전) 배포 때마다 이전 캐시가 자동으로 지워지게 함
 - 새 버전이 감지되면(이미 열려있는 탭 포함) "새 버전이 있어요. 새로고침 하시겠어요?" 배너를 은근하게 노출, 확인 시에만 새로고침 — 강제 새로고침으로 입력 중이던 내용을 잃지 않게 함. 탭이 다시 보일 때(`visibilitychange`)마다 업데이트를 능동적으로 확인
