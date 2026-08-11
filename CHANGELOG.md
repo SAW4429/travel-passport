@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.9.3 (2026-08-11)
+- 일본(JP) 문화 정보 링크 URL 수정 (tistory.com/31 → /32)
+
 ## v2.9.2 (2026-08-11)
 - 일본 국가별 추천 데이터 추가 (country-recommendations.json)
 - country-recommendations.json이 GitHub 웹 UI로 직접 수정되면서 JSON 문법이 깨져있던 것(별개의 JSON 객체 두 개가 이어붙은 형태)을 발견해 하나의 유효한 객체로 복구
