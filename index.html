@@ -212,9 +212,12 @@ button{font-family:inherit;}
 .region-blob.status-visited{fill:var(--visit);}
 .region-blob.status-visited:hover, .region-blob.status-visited.hovered{fill:var(--visit-hover);}
 
-/* 지도 라벨: 흰색 외곽선(halo)으로 미방문/방문예정/방문완료 색 위에서 전부 읽히게 함(테마 무관하게 견고) */
+/* 지도 라벨: 흰색 외곽선(halo)으로 미방문/방문예정/방문완료 색 위에서 전부 읽히게 함(테마 무관하게 견고)
+   font-size는 도형 크기에 비례해 JS에서 인라인으로 매겨진다(우선순위/충돌 감지 결과). display는 줌 티어(국가/상세)를
+   전환하고, opacity(.label-visible)는 그 안에서 우선순위·충돌 감지로 골라진 라벨만 살짝 페이드인시킨다. */
 .region-label{
   font-family:var(--font-sans);
+  font-weight:700;
   fill:var(--ink);
   paint-order:stroke;
   stroke:rgba(255,255,255,.82);
@@ -222,13 +225,13 @@ button{font-family:inherit;}
   stroke-linejoin:round;
   pointer-events:none;
   text-anchor:middle;
+  opacity:0;
+  transition:opacity .15s ease;
 }
-.region-label-world{ font-size:11px; font-weight:700; }
-.region-label-blob{ font-size:11px; font-weight:700; display:none; }
+.region-label.label-visible{ opacity:1; }
+.region-label-blob{ display:none; }
 #zoomLayer.zoomed-out .region-label-blob{ display:block; }
-.region-label-detail{ font-size:9px; font-weight:600; }
 #zoomLayer.zoomed-out .region-label-detail{ display:none; }
-.region-label.label-hide{ display:none; }
 
 .bubble{
   position:absolute;pointer-events:none;
@@ -680,7 +683,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.10.0</span>
+    · <span id="appVersion" style="opacity:.6;">v2.10.1</span>
   </div>
 </div>
 
@@ -1435,10 +1438,14 @@ const MAPW = WORLD_META.W, MAPH = WORLD_META.H;
    - region-label-world: WORLD_DATA(상세지도 없는 국가) — 항상 후보, zoomed-out과 무관
    - region-label-blob:  BLOBS(상세지도 있는 26개국+한국) — .region-blob과 동일하게 zoomed-out일 때만
    - region-label-detail:상세지역(도/주/시군구) — .region-detail과 동일하게 zoomed-out이 아닐 때만
-   각 후보는 넓이(도형 bbox)와 화면상 위치(뷰포트)에 따라 매 프레임(rAF로 이미 스로틀됨) 표시 여부가 결정된다. */
+
+   무조건 넓이 기준 켜고 끄던 이전 방식은 축소 상태에서 라벨이 전부 동시에 뜨면서 서로 겹치는 문제가 있었다.
+   지금은: 화면상 크기·국가/하위지역 티어·국가별 추천 데이터 유무로 우선순위 점수를 매기고, 뷰포트당 최대
+   개수를 제한한 뒤, 우선순위 높은 순으로 하나씩 배치하면서 이미 배치된 라벨과 겹치면(사각형 충돌) 건너뛴다.
+   글자 크기는 도형 크기에 비례하되 상/하한을 두고, 하한 아래면 억지로 줄이지 않고 아예 숨긴다. */
 const labelLayer = document.createElementNS(svgNS, "g");
 labelLayer.setAttribute("id", "labelLayer");
-let LABELS = []; // { el, cx, cy, w, h, cat, len }
+let LABELS = []; // { el, cx, cy, w, h, cat, len, recCode }
 // path의 d 속성에서 직접 bbox를 계산한다. getBBox()는 display:none인 상세지역(zoomed-out일 때)에서
 // 0을 반환해서 쓸 수 없었다 — 이 지도 데이터는 M/L/Z만 사용하는 단순 다각형이라 문자열 파싱으로 충분하다.
 function pathBBoxFromD(d){
@@ -1453,41 +1460,106 @@ function pathBBoxFromD(d){
   if(minX === Infinity) return null;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
-function makeLabel(text, cx, cy, w, h, cat){
+function makeLabel(text, cx, cy, w, h, cat, recCode){
   if(!text || w <= 0 || h <= 0) return;
   const el = document.createElementNS(svgNS, "text");
   el.setAttribute("class", "region-label " + cat);
   el.setAttribute("dy", "0.35em");
   el.textContent = text;
   labelLayer.appendChild(el);
-  LABELS.push({ el, cx, cy, w, h, cat, len: text.length });
+  LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null });
 }
 let pxPerUnit = 1;
 function refreshPxPerUnit(){ pxPerUnit = (svg.clientWidth / MAPW) || 1; }
 window.addEventListener("resize", refreshPxPerUnit);
+
 const LABEL_VIEWPORT_MARGIN = 40;
-function updateLabels(){
+const LABEL_MAX_WORLD_TIER = 26;      // 세계지도 축소 상태 — 엄격하게 제한
+function labelMaxDetailTier(){ return window.innerWidth < 640 ? 20 : 40; } // 확대 상태 — 화면 클수록 더 허용
+const LABEL_MIN_FONT = 8, LABEL_MAX_FONT = 13;               // 국가 단위
+const LABEL_MIN_FONT_DETAIL = 7, LABEL_MAX_FONT_DETAIL = 12; // 하위 지역
+
+function rectOverlap(a, b){
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
+
+let visibleLabelSet = new Set();
+// 우선순위/충돌 계산은 다소 무겁기 때문에(후보가 최대 ~1700개) 빠른 연속 줌 조작에도 버벅이지 않도록
+// 스로틀한다 — 위치 갱신(positionVisibleLabels)은 매 프레임 하되, "무엇을 보여줄지" 재계산은 최소 간격을 둔다.
+let lastLabelRecomputeAt = 0;
+let labelRecomputeTimer = null;
+const LABEL_RECOMPUTE_MIN_INTERVAL = 90;
+function scheduleLabelRecompute(){
+  const now = performance.now();
+  if(now - lastLabelRecomputeAt >= LABEL_RECOMPUTE_MIN_INTERVAL){
+    lastLabelRecomputeAt = now;
+    recomputeLabelVisibility();
+  } else if(!labelRecomputeTimer){
+    labelRecomputeTimer = setTimeout(()=>{
+      labelRecomputeTimer = null;
+      lastLabelRecomputeAt = performance.now();
+      recomputeLabelVisibility();
+    }, LABEL_RECOMPUTE_MIN_INTERVAL);
+  }
+  positionVisibleLabels();
+}
+
+function recomputeLabelVisibility(){
   if(!LABELS.length) return;
   const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
-  const k = 1 / scale;
+  const activeDetailCat = isZoomedOut ? "region-label-blob" : "region-label-detail";
+  const maxLabels = isZoomedOut ? LABEL_MAX_WORLD_TIER : labelMaxDetailTier();
+
+  const candidates = [];
   LABELS.forEach(item=>{
-    if(item.cat === "region-label-blob" && !isZoomedOut) return;
-    if(item.cat === "region-label-detail" && isZoomedOut) return;
+    if(item.cat !== "region-label-world" && item.cat !== activeDetailCat) return; // 비활성 티어는 애초에 후보 아님
     const svgX = tx + item.cx * scale;
     const svgY = ty + item.cy * scale;
     if(svgX < -LABEL_VIEWPORT_MARGIN || svgX > MAPW + LABEL_VIEWPORT_MARGIN ||
-       svgY < -LABEL_VIEWPORT_MARGIN || svgY > MAPH + LABEL_VIEWPORT_MARGIN){
-      item.el.classList.add("label-hide");
-      return;
-    }
-    const fontPx = item.cat === "region-label-detail" ? 9 : 11;
+       svgY < -LABEL_VIEWPORT_MARGIN || svgY > MAPH + LABEL_VIEWPORT_MARGIN) return;
+
+    const isDetail = item.cat === "region-label-detail";
+    const minFont = isDetail ? LABEL_MIN_FONT_DETAIL : LABEL_MIN_FONT;
+    const maxFont = isDetail ? LABEL_MAX_FONT_DETAIL : LABEL_MAX_FONT;
     const onScreenW = item.w * scale * pxPerUnit;
     const onScreenH = item.h * scale * pxPerUnit;
-    if(onScreenW < item.len * fontPx * 0.62 || onScreenH < fontPx + 2){
-      item.el.classList.add("label-hide");
-      return;
-    }
-    item.el.classList.remove("label-hide");
+    const fontPx = clamp(onScreenW * 0.16, minFont, maxFont);
+    const estW = item.len * fontPx * 0.62;
+    const estH = fontPx * 1.3;
+    // 하한보다 작거나 도형에 안 맞으면 억지로 줄이지 않고 그냥 숨긴다
+    if(fontPx <= minFont && (estW > onScreenW || estH > onScreenH)) return;
+    if(estW > onScreenW * 1.15 || estH > onScreenH * 1.6) return;
+
+    const tierBonus = isDetail ? 0 : 1e9; // 국가 단위가 항상 하위 지역보다 우선
+    const recsBonus = (item.recCode && COUNTRY_RECS[item.recCode]) ? 5000 : 0;
+    const priority = tierBonus + recsBonus + onScreenW * onScreenH;
+
+    candidates.push({ item, svgX, svgY, fontPx, estW, estH, priority });
+  });
+
+  candidates.sort((a, b)=> b.priority - a.priority);
+
+  const placedBoxes = [];
+  const nextVisible = new Set();
+  for(const c of candidates){
+    if(placedBoxes.length >= maxLabels) break;
+    const box = { left: c.svgX - c.estW/2, right: c.svgX + c.estW/2, top: c.svgY - c.estH/2, bottom: c.svgY + c.estH/2 };
+    if(placedBoxes.some(p => rectOverlap(box, p))) continue;
+    placedBoxes.push(box);
+    nextVisible.add(c.item);
+    c.item.el.dataset.fontPx = c.fontPx.toFixed(2);
+  }
+
+  visibleLabelSet.forEach(item=>{ if(!nextVisible.has(item)) item.el.classList.remove("label-visible"); });
+  nextVisible.forEach(item=> item.el.classList.add("label-visible"));
+  visibleLabelSet = nextVisible;
+  positionVisibleLabels();
+}
+
+function positionVisibleLabels(){
+  const k = 1 / scale;
+  visibleLabelSet.forEach(item=>{
+    item.el.style.fontSize = (item.el.dataset.fontPx || 11) + "px";
     item.el.setAttribute("transform", "translate(" + item.cx + " " + item.cy + ") scale(" + k + ")");
   });
 }
@@ -1518,7 +1590,7 @@ function buildMap(){
     p.setAttribute("d", r.d);
     zoomLayer.appendChild(p);
     const bb = pathBBoxFromD(r.d);
-    if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-world");
+    if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-world", countryCodeOf(r));
   });
 
   Object.entries(BLOBS).forEach(([key,b])=>{
@@ -1528,7 +1600,7 @@ function buildMap(){
     el.setAttribute("d", b.d);
     zoomLayer.appendChild(el);
     const name = (BLOB_NAMES[key] && BLOB_NAMES[key].name) || key;
-    makeLabel(name, b.cx, b.cy, b.bw, b.bh, "region-label-blob");
+    makeLabel(name, b.cx, b.cy, b.bw, b.bh, "region-label-blob", key.toUpperCase());
   });
 
   scale = 1; tx = 0; ty = 0;
@@ -1558,7 +1630,7 @@ function buildMap(){
       schedule(buildDetailChunk);
     } else {
       zoomLayer.appendChild(labelLayer); // 모든 도형이 그려진 뒤 맨 위에 올려서 라벨이 항상 도형 위에 보이게 함
-      updateLabels();
+      recomputeLabelVisibility();
       renderAll();
     }
   }
@@ -2506,7 +2578,7 @@ function applyTransform(){
   svg.style.setProperty("--rws", clamp(BASE_RWS/scale, .04, BASE_RWS).toFixed(4));
   zoomLayer.classList.toggle("zoomed-out", scale <= DETAIL_REVEAL_SCALE);
   pingMarkers.forEach(positionPingMarker);
-  updateLabels();
+  scheduleLabelRecompute();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function clampPan(){

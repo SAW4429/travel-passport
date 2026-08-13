@@ -60,7 +60,7 @@ const requiredFns = [
   "openSidebar", "closeSidebar", "renderSidebar", "buildMap", "loadState", "saveState", "trackEvent",
   "renderCountryRecs", "loadCountryRecommendations", "countryCodeOf", "renderPrepSlots", "pickPrepWidgets",
   "currentSeason", "initOnboarding", "renderExploreList", "buildExploreCountries", "continentOf",
-  "makeLabel", "pathBBoxFromD", "updateLabels"
+  "makeLabel", "pathBBoxFromD", "recomputeLabelVisibility", "positionVisibleLabels", "rectOverlap"
 ];
 requiredFns.forEach(fn=>{
   check("index.html에 function " + fn + " 정의됨", ()=> new RegExp("function\\s+" + fn + "\\s*\\(").test(html));
