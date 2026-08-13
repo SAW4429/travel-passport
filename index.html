@@ -212,6 +212,24 @@ button{font-family:inherit;}
 .region-blob.status-visited{fill:var(--visit);}
 .region-blob.status-visited:hover, .region-blob.status-visited.hovered{fill:var(--visit-hover);}
 
+/* 지도 라벨: 흰색 외곽선(halo)으로 미방문/방문예정/방문완료 색 위에서 전부 읽히게 함(테마 무관하게 견고) */
+.region-label{
+  font-family:var(--font-sans);
+  fill:var(--ink);
+  paint-order:stroke;
+  stroke:rgba(255,255,255,.82);
+  stroke-width:3px;
+  stroke-linejoin:round;
+  pointer-events:none;
+  text-anchor:middle;
+}
+.region-label-world{ font-size:11px; font-weight:700; }
+.region-label-blob{ font-size:11px; font-weight:700; display:none; }
+#zoomLayer.zoomed-out .region-label-blob{ display:block; }
+.region-label-detail{ font-size:9px; font-weight:600; }
+#zoomLayer.zoomed-out .region-label-detail{ display:none; }
+.region-label.label-hide{ display:none; }
+
 .bubble{
   position:absolute;pointer-events:none;
   background:var(--navy);color:var(--paper);
@@ -662,7 +680,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.9.3</span>
+    · <span id="appVersion" style="opacity:.6;">v2.10.0</span>
   </div>
 </div>
 
@@ -1411,8 +1429,74 @@ const svg = document.getElementById("krMap");
 const zoomLayer = document.getElementById("zoomLayer");
 const MAPW = WORLD_META.W, MAPH = WORLD_META.H;
 
+/* ---------- 지도 라벨(국가/지역명 표시) ----------
+   기존 줌 시스템(scale/tx/ty, #zoomLayer.zoomed-out, applyTransform)을 그대로 재사용한다.
+   라벨은 셋으로 나뉜다:
+   - region-label-world: WORLD_DATA(상세지도 없는 국가) — 항상 후보, zoomed-out과 무관
+   - region-label-blob:  BLOBS(상세지도 있는 26개국+한국) — .region-blob과 동일하게 zoomed-out일 때만
+   - region-label-detail:상세지역(도/주/시군구) — .region-detail과 동일하게 zoomed-out이 아닐 때만
+   각 후보는 넓이(도형 bbox)와 화면상 위치(뷰포트)에 따라 매 프레임(rAF로 이미 스로틀됨) 표시 여부가 결정된다. */
+const labelLayer = document.createElementNS(svgNS, "g");
+labelLayer.setAttribute("id", "labelLayer");
+let LABELS = []; // { el, cx, cy, w, h, cat, len }
+// path의 d 속성에서 직접 bbox를 계산한다. getBBox()는 display:none인 상세지역(zoomed-out일 때)에서
+// 0을 반환해서 쓸 수 없었다 — 이 지도 데이터는 M/L/Z만 사용하는 단순 다각형이라 문자열 파싱으로 충분하다.
+function pathBBoxFromD(d){
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const re = /[ML]\s*(-?\d*\.?\d+),(-?\d*\.?\d+)/g;
+  let m;
+  while((m = re.exec(d))){
+    const x = parseFloat(m[1]), y = parseFloat(m[2]);
+    if(x < minX) minX = x; if(x > maxX) maxX = x;
+    if(y < minY) minY = y; if(y > maxY) maxY = y;
+  }
+  if(minX === Infinity) return null;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+function makeLabel(text, cx, cy, w, h, cat){
+  if(!text || w <= 0 || h <= 0) return;
+  const el = document.createElementNS(svgNS, "text");
+  el.setAttribute("class", "region-label " + cat);
+  el.setAttribute("dy", "0.35em");
+  el.textContent = text;
+  labelLayer.appendChild(el);
+  LABELS.push({ el, cx, cy, w, h, cat, len: text.length });
+}
+let pxPerUnit = 1;
+function refreshPxPerUnit(){ pxPerUnit = (svg.clientWidth / MAPW) || 1; }
+window.addEventListener("resize", refreshPxPerUnit);
+const LABEL_VIEWPORT_MARGIN = 40;
+function updateLabels(){
+  if(!LABELS.length) return;
+  const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
+  const k = 1 / scale;
+  LABELS.forEach(item=>{
+    if(item.cat === "region-label-blob" && !isZoomedOut) return;
+    if(item.cat === "region-label-detail" && isZoomedOut) return;
+    const svgX = tx + item.cx * scale;
+    const svgY = ty + item.cy * scale;
+    if(svgX < -LABEL_VIEWPORT_MARGIN || svgX > MAPW + LABEL_VIEWPORT_MARGIN ||
+       svgY < -LABEL_VIEWPORT_MARGIN || svgY > MAPH + LABEL_VIEWPORT_MARGIN){
+      item.el.classList.add("label-hide");
+      return;
+    }
+    const fontPx = item.cat === "region-label-detail" ? 9 : 11;
+    const onScreenW = item.w * scale * pxPerUnit;
+    const onScreenH = item.h * scale * pxPerUnit;
+    if(onScreenW < item.len * fontPx * 0.62 || onScreenH < fontPx + 2){
+      item.el.classList.add("label-hide");
+      return;
+    }
+    item.el.classList.remove("label-hide");
+    item.el.setAttribute("transform", "translate(" + item.cx + " " + item.cy + ") scale(" + k + ")");
+  });
+}
+
 function buildMap(){
   zoomLayer.innerHTML = "";
+  labelLayer.innerHTML = "";
+  LABELS = [];
+  refreshPxPerUnit();
 
   const rect = document.createElementNS(svgNS,"rect");
   rect.setAttribute("class","ocean-bg");
@@ -1433,6 +1517,8 @@ function buildMap(){
     p.setAttribute("data-code", r.code);
     p.setAttribute("d", r.d);
     zoomLayer.appendChild(p);
+    const bb = pathBBoxFromD(r.d);
+    if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-world");
   });
 
   Object.entries(BLOBS).forEach(([key,b])=>{
@@ -1441,6 +1527,8 @@ function buildMap(){
     el.setAttribute("data-blobkey", key);
     el.setAttribute("d", b.d);
     zoomLayer.appendChild(el);
+    const name = (BLOB_NAMES[key] && BLOB_NAMES[key].name) || key;
+    makeLabel(name, b.cx, b.cy, b.bw, b.bh, "region-label-blob");
   });
 
   scale = 1; tx = 0; ty = 0;
@@ -1462,11 +1550,15 @@ function buildMap(){
       p.setAttribute("data-code", r.code);
       p.setAttribute("d", r.d);
       frag.appendChild(p);
+      const bb = pathBBoxFromD(r.d);
+      if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail");
     }
     zoomLayer.appendChild(frag);
     if(idx < detailRegions.length){
       schedule(buildDetailChunk);
     } else {
+      zoomLayer.appendChild(labelLayer); // 모든 도형이 그려진 뒤 맨 위에 올려서 라벨이 항상 도형 위에 보이게 함
+      updateLabels();
       renderAll();
     }
   }
@@ -2414,6 +2506,7 @@ function applyTransform(){
   svg.style.setProperty("--rws", clamp(BASE_RWS/scale, .04, BASE_RWS).toFixed(4));
   zoomLayer.classList.toggle("zoomed-out", scale <= DETAIL_REVEAL_SCALE);
   pingMarkers.forEach(positionPingMarker);
+  updateLabels();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function clampPan(){
