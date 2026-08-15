@@ -193,7 +193,15 @@ button{font-family:inherit;}
 .region.status-visited:hover, .region.status-visited.hovered{fill:var(--visit-hover);}
 .region.dimmed, .region-blob.dimmed{opacity:.18;}
 .region.selected{stroke:var(--stamp-red);stroke-width:var(--rws, 1.6);}
-#zoomLayer.zoomed-out .region-detail{display:none;}
+/* 실측(v2.10.6, puppeteer-core로 실제 Chrome을 6배 CPU 스로틀로 띄워 CDP longtask/트레이싱 측정 —
+   이전까지 쓰던 자동화 탭은 document.hidden=true라 이 비용 자체가 안 보였음): 예전엔 이 규칙이
+   "#zoomLayer.zoomed-out .region-detail{display:none;}" 형태의 하위선택자(descendant combinator)였는데,
+   조상(#zoomLayer)의 클래스가 바뀔 때 이 선택자와 매칭되는 하위 요소가 최대 ~1480개라서, 그 전환이
+   "실제로 필요한 단 한 번"이어도 Blink가 몇 초씩 스타일을 다시 계산했다(연속 축소 3초 시나리오에서
+   9.0초→3.0초로 줄어드는 걸 확인). 지금은 하위선택자를 없애고, 전환이 일어나는 그 순간에 JS에서
+   DETAIL_PATH_ELS를 직접 순회하며 이 클래스 자체를 각 요소에 붙이는 방식으로 바꿨다(computeActiveDetailCountry
+   윗줄의 zoomedOut 처리, buildMap의 buildDetailChunk 참고). */
+.region-detail.zd-hidden{display:none;}
 .region-detail.path-offscreen{display:none;}
 .ping-marker{pointer-events:none;}
 .ping-ring{fill:none;stroke:var(--gold);stroke-width:.6;opacity:0;animation:pingExpand 1.3s ease-out infinite;}
@@ -220,8 +228,15 @@ button{font-family:inherit;}
 .region-blob.status-visited:hover, .region-blob.status-visited.hovered{fill:var(--visit-hover);}
 
 /* 지도 라벨: 흰색 외곽선(halo)으로 미방문/방문예정/방문완료 색 위에서 전부 읽히게 함(테마 무관하게 견고)
-   font-size는 도형 크기에 비례해 JS에서 인라인으로 매겨진다(우선순위/충돌 감지 결과). display는 줌 티어(국가/상세)를
-   전환하고, opacity(.label-visible)는 그 안에서 우선순위·충돌 감지로 골라진 라벨만 살짝 페이드인시킨다. */
+   font-size는 도형 크기에 비례해 JS에서 인라인으로 매겨진다(우선순위/충돌 감지 결과).
+   실측(v2.10.6, puppeteer-core + 실제 Chrome, CPU 6배 스로틀): 라벨은 최대 ~1720개인데 예전엔 안 보이는
+   라벨도 opacity:0으로만 숨겼다 — display는 그대로 정상이라 브라우저의 레이아웃 트리엔 계속 남아있었고,
+   그 결과 다른 이유로 일어나는 레이아웃/스타일 재계산(예: 상세지역 뷰포트 컬링처럼 매 프레임 정상적으로
+   일어나는 것)마다 이 1720개를 매번 같이 고려해야 했다. 연속 축소 3초 시나리오에서 longtask 총량이
+   11.4초→1.7초(85% 감소)로 줄어든 게 바로 이 부분이었다 — 지금까지 찾은 어떤 원인보다 컸다. 그래서
+   "선택 안 된 라벨은 display:none으로 레이아웃 트리에서 완전히 뺀다"로 바꿨다. 트레이드오프: opacity
+   트랜지션은 display:none↔block 전환에서는 애니메이션되지 않아서, 라벨이 나타나고 사라질 때 부드럽게
+   페이드하던 게 사라지고 즉시 나타났다 사라진다(CHANGELOG 참고, 원하면 되돌릴 수 있음). */
 .region-label{
   font-family:var(--font-sans);
   font-weight:700;
@@ -232,13 +247,9 @@ button{font-family:inherit;}
   stroke-linejoin:round;
   pointer-events:none;
   text-anchor:middle;
-  opacity:0;
-  transition:opacity .15s ease;
+  display:none;
 }
-.region-label.label-visible{ opacity:1; }
-.region-label-blob{ display:none; }
-#zoomLayer.zoomed-out .region-label-blob{ display:block; }
-#zoomLayer.zoomed-out .region-label-detail{ display:none; }
+.region-label.label-visible{ display:block; }
 
 .bubble{
   position:absolute;pointer-events:none;
@@ -626,7 +637,7 @@ button{font-family:inherit;}
       </div>
 
       <svg id="krMap" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" style="--rw: 0.2500; --rws: 0.7500;">
-        <g id="zoomLayer" transform="translate(0 0) scale(1)" class="zoomed-out"></g>
+        <g id="zoomLayer" transform="translate(0 0) scale(1)"></g>
       </svg>
 
       <div class="bubble" id="bubble" style="left: 1271px; top: 404px;">러시아</div>
@@ -690,7 +701,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.10.5</span>
+    · <span id="appVersion" style="opacity:.6;">v2.10.6</span>
   </div>
 </div>
 
@@ -1465,6 +1476,7 @@ const labelLayer = document.createElementNS(svgNS, "g");
 labelLayer.setAttribute("id", "labelLayer");
 let LABELS = []; // { el, cx, cy, w, h, cat, len, recCode }
 const BLOB_ELS = {}; // key -> <path class="region-blob"> 엘리먼트, computeActiveDetailCountry()에서 빠른 토글용
+let DETAIL_PATH_ELS = []; // 모든 region-detail <path> 엘리먼트 — zoomed-out 전환 시 zd-hidden 클래스를 직접 토글하는 용도
 // path의 d 속성에서 직접 bbox를 계산한다. getBBox()는 display:none인 상세지역(zoomed-out일 때)에서
 // 0을 반환해서 쓸 수 없었다 — 이 지도 데이터는 M/L/Z만 사용하는 단순 다각형이라 문자열 파싱으로 충분하다.
 // 자오선(경도 180도)을 가로지르는 나라(피지, 키리바시 등)는 원본 지도 데이터가 지도 양쪽 끝(x=0, x=720)에
@@ -1574,7 +1586,7 @@ function computeActiveDetailCountry(){
 function updatePathCulling(){
   if(!LABELS.length) return;
   const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
-  if(isZoomedOut) return; // #zoomLayer.zoomed-out .region-detail{display:none}로 이미 전부 숨겨짐
+  if(isZoomedOut) return; // .region-detail.zd-hidden으로 이미 전부 숨겨짐(applyTransform)
   LABELS.forEach(item=>{
     if(!item.pathEl) return;
     const halfW = item.w / 2, halfH = item.h / 2;
@@ -1727,6 +1739,8 @@ function buildMap(){
   zoomLayer.innerHTML = "";
   labelLayer.innerHTML = "";
   LABELS = [];
+  DETAIL_PATH_ELS = [];
+  lastZoomedOutApplied = null; // 재빌드(클라우드 pull 등) 시에도 아래 첫 applyTransform()이 새로 만든 DETAIL_PATH_ELS에 zd-hidden을 반드시 다시 매기도록
   refreshPxPerUnit();
 
   const rect = document.createElementNS(svgNS,"rect");
@@ -1777,11 +1791,13 @@ function buildMap(){
     const frag = document.createDocumentFragment();
     for(; idx < end; idx++){
       const r = detailRegions[idx];
+      const zoomedOutNow = scale <= DETAIL_REVEAL_SCALE; // 이 청크가 만들어지는 시점의 실시간 상태 — 빌드 중간에 사용자가 확대해도 정확함
       const p = document.createElementNS(svgNS,"path");
-      p.setAttribute("class","region region-detail");
+      p.setAttribute("class","region region-detail" + (zoomedOutNow ? " zd-hidden" : ""));
       p.setAttribute("data-code", r.code);
       p.setAttribute("d", r.d);
       frag.appendChild(p);
+      DETAIL_PATH_ELS.push(p);
       const bb = pathBBoxFromD(r.d);
       if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail", null, r.domain === "kr", p, r.countryKey);
     }
@@ -2737,6 +2753,15 @@ const DETAIL_REVEAL_SCALE = 2;
 // 갱신하면 확대할수록(=상세 지역 path가 다 로드된 뒤) 버벅임의 원인이 된다. 실제 값이 이전 대비
 // 5% 넘게 달라졌을 때만 다시 쓰도록 해서, 화면상 거의 안 보이는 미세한 변화까지 매번 반영하지 않게 한다.
 let lastRwApplied = null, lastRwsApplied = null;
+// 실측(puppeteer-core로 실제 Chrome을 CPU 6배 스로틀로 띄워 CDP longtask/트레이싱 측정 — 이전까지
+// 쓰던 자동화 탭은 document.hidden=true라 requestAnimationFrame이 아예 발동하지 않아 이 비용 자체가
+// 안 보였음): 예전엔 "#zoomLayer.zoomed-out .region-detail{display:none;}" 같은 하위선택자(descendant
+// combinator)로 켜고 껐는데, 이 방식은 "값이 실제로 바뀌는 단 한 번의 전환"이어도 Blink가 최대 ~1480개
+// 상세지역 path 전체를 다시 매칭·스타일계산해야 해서 비쌌다. 하위선택자 없이 DETAIL_PATH_ELS를 직접
+// 순회하며 자기참조 클래스(.region-detail.zd-hidden — 위 CSS 참고)를 붙이는 방식으로 바꿨다. 라벨은
+// 이 메커니즘이 필요 없어졌음 — region-label의 display를 아예 label-visible 하나로 통일했더니(위 CSS
+// "지도 라벨" 주석 참고) 그게 훨씬 큰 비중을 차지해서 별도 zd-* 클래스가 불필요해짐.
+let lastZoomedOutApplied = null;
 function applyTransform(){
   zoomLayer.setAttribute("transform", "translate("+tx+" "+ty+") scale("+scale+")");
   const rw = clamp(BASE_RW/scale, .015, BASE_RW);
@@ -2749,7 +2774,11 @@ function applyTransform(){
     svg.style.setProperty("--rws", rws.toFixed(4));
     lastRwsApplied = rws;
   }
-  zoomLayer.classList.toggle("zoomed-out", scale <= DETAIL_REVEAL_SCALE);
+  const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
+  if(lastZoomedOutApplied !== isZoomedOut){
+    DETAIL_PATH_ELS.forEach(el => el.classList.toggle("zd-hidden", isZoomedOut));
+    lastZoomedOutApplied = isZoomedOut;
+  }
   computeActiveDetailCountry();
   pingMarkers.forEach(positionPingMarker);
   scheduleLabelRecompute();
