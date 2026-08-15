@@ -2590,10 +2590,23 @@ let scale = 1, tx = 0, ty = 0;
 const SCALE_MIN = 1, SCALE_MAX = 90;
 const BASE_RW = .25, BASE_RWS = .75;
 const DETAIL_REVEAL_SCALE = 2;
+// --rw/--rws는 .region/.region-blob 등 최대 ~1700개 path의 stroke-width에 쓰인다(var(--rw, .5)).
+// CSS 커스텀 프로퍼티가 바뀌면 이를 참조하는 모든 요소가 스타일 재계산되므로, 매 프레임(스크롤/줌마다)
+// 갱신하면 확대할수록(=상세 지역 path가 다 로드된 뒤) 버벅임의 원인이 된다. 실제 값이 이전 대비
+// 5% 넘게 달라졌을 때만 다시 쓰도록 해서, 화면상 거의 안 보이는 미세한 변화까지 매번 반영하지 않게 한다.
+let lastRwApplied = null, lastRwsApplied = null;
 function applyTransform(){
   zoomLayer.setAttribute("transform", "translate("+tx+" "+ty+") scale("+scale+")");
-  svg.style.setProperty("--rw", clamp(BASE_RW/scale, .015, BASE_RW).toFixed(4));
-  svg.style.setProperty("--rws", clamp(BASE_RWS/scale, .04, BASE_RWS).toFixed(4));
+  const rw = clamp(BASE_RW/scale, .015, BASE_RW);
+  const rws = clamp(BASE_RWS/scale, .04, BASE_RWS);
+  if(lastRwApplied === null || Math.abs(rw - lastRwApplied) > lastRwApplied * 0.05){
+    svg.style.setProperty("--rw", rw.toFixed(4));
+    lastRwApplied = rw;
+  }
+  if(lastRwsApplied === null || Math.abs(rws - lastRwsApplied) > lastRwsApplied * 0.05){
+    svg.style.setProperty("--rws", rws.toFixed(4));
+    lastRwsApplied = rws;
+  }
   zoomLayer.classList.toggle("zoomed-out", scale <= DETAIL_REVEAL_SCALE);
   pingMarkers.forEach(positionPingMarker);
   scheduleLabelRecompute();
@@ -2624,7 +2637,12 @@ function scheduleRender(){
     applyTransform();
   });
 }
-function zoomAt(newScale, clientX, clientY){
+// scale/tx/ty 갱신(가벼움)과 실제 DOM 반영(applyTransform, 상대적으로 무거움)을 분리한다.
+// 휠 이벤트는 트랙패드에서 한 번의 제스처로 짧은 시간에 수십 번 발생할 수 있는데, 예전에는 매번
+// applyTransform()을 동기적으로 실행해서 브라우저 렌더링 속도를 앞질러 버벅였다. 핀치줌/드래그가 이미
+// 쓰고 있는 scheduleRender()(requestAnimationFrame 배치)를 휠에도 그대로 재사용해서, 한 프레임 안에
+// 여러 번 휠 이벤트가 와도 실제 DOM 갱신은 프레임당 한 번만 일어나게 한다.
+function setZoomAt(newScale, clientX, clientY){
   newScale = clamp(newScale, SCALE_MIN, SCALE_MAX);
   const p = localPoint(clientX, clientY);
   const o = svgPoint(clientX, clientY);
@@ -2632,6 +2650,9 @@ function zoomAt(newScale, clientX, clientY){
   tx = o.x - scale*p.x;
   ty = o.y - scale*p.y;
   clampPan();
+}
+function zoomAt(newScale, clientX, clientY){
+  setZoomAt(newScale, clientX, clientY);
   applyTransform();
 }
 window.addEventListener("resize", refreshSvgCTM);
@@ -2640,7 +2661,8 @@ refreshSvgCTM();
 viewport.addEventListener("wheel", e=>{
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.18 : 0.85;
-  zoomAt(scale*factor, e.clientX, e.clientY);
+  setZoomAt(scale*factor, e.clientX, e.clientY);
+  scheduleRender();
 }, {passive:false});
 document.getElementById("zoomIn").addEventListener("click", ()=>{
   const rect = viewport.getBoundingClientRect();
