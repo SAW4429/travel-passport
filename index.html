@@ -183,6 +183,9 @@ button{font-family:inherit;}
   transition:fill .15s ease;
   shape-rendering:geometricPrecision;
 }
+/* 드래그(팬/핀치) 중에는 경계선을 정밀하게(geometricPrecision) 그리는 대신 더 빠르게 그리도록 낮춰서
+   렌더링 부담을 줄이고, 손을 떼면 원래 정밀도로 되돌린다. */
+.map-viewport.dragging .region{shape-rendering:optimizeSpeed;}
 .region:hover, .region.hovered{fill:var(--unvisited-hover);}
 .region.status-planning{fill:var(--plan);}
 .region.status-planning:hover, .region.status-planning.hovered{fill:var(--plan-hover);}
@@ -1526,12 +1529,43 @@ function rectOverlap(a, b){
 }
 
 let visibleLabelSet = new Set();
-// 우선순위/충돌 계산은 다소 무겁기 때문에(후보가 최대 ~1700개) 빠른 연속 줌 조작에도 버벅이지 않도록
-// 스로틀한다 — 위치 갱신(positionVisibleLabels)은 매 프레임 하되, "무엇을 보여줄지" 재계산은 최소 간격을 둔다.
+
+// 뷰포트 밖 상세 지역 path 컬링은 라벨 우선순위 재계산과 분리한다 — 드래그 중에도 매 프레임 실행해서
+// 새로 화면에 들어오는 지역이 지연 없이 바로 나타나게 한다(우선순위 재계산처럼 무거운 정렬·충돌
+// 검사가 없어서 매 프레임 돌려도 저렴함).
+function updatePathCulling(){
+  if(!LABELS.length) return;
+  const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
+  if(isZoomedOut) return; // #zoomLayer.zoomed-out .region-detail{display:none}로 이미 전부 숨겨짐
+  LABELS.forEach(item=>{
+    if(!item.pathEl) return;
+    const halfW = item.w / 2, halfH = item.h / 2;
+    const left = tx + (item.cx - halfW) * scale, right = tx + (item.cx + halfW) * scale;
+    const top = ty + (item.cy - halfH) * scale, bottom = ty + (item.cy + halfH) * scale;
+    const offscreen = right < -PATH_CULL_MARGIN || left > MAPW + PATH_CULL_MARGIN ||
+                       bottom < -PATH_CULL_MARGIN || top > MAPH + PATH_CULL_MARGIN;
+    if(offscreen !== item._wasOffscreen){
+      item.pathEl.classList.toggle("path-offscreen", offscreen);
+      item._wasOffscreen = offscreen;
+    }
+  });
+}
+
+// 우선순위/충돌 계산(정렬 + 사각형 충돌 검사, 후보 최대 ~1700개)은 위 컬링보다 훨씬 무겁다. 이전엔
+// 90ms 스로틀만 적용했는데, 드래그 자체는 이미 scheduleRender()로 프레임당 한 번만 렌더링되고 있었음에도
+// 여전히 정지 구간이 있었다 — 즉 "너무 자주 계산"이 아니라 "한 번 계산이 무겁다"는 뜻일 가능성이 커서,
+// 이번엔 더 공격적으로 드래그(팬/핀치) 중에는 재계산 자체를 건너뛴다. 이미 화면에 떠 있는 라벨의 위치만
+// 옮기고(positionVisibleLabels, 최대 40~60개라 저렴함), 어떤 라벨을 보여줄지는 드래그가 끝난 순간
+// (endPointer) 한 번만 정확히 다시 계산한다.
 let lastLabelRecomputeAt = 0;
 let labelRecomputeTimer = null;
 const LABEL_RECOMPUTE_MIN_INTERVAL = 90;
 function scheduleLabelRecompute(){
+  updatePathCulling();
+  if(viewport.classList.contains("dragging")){
+    positionVisibleLabels();
+    return;
+  }
   const now = performance.now();
   if(now - lastLabelRecomputeAt >= LABEL_RECOMPUTE_MIN_INTERVAL){
     lastLabelRecomputeAt = now;
@@ -1554,21 +1588,6 @@ function recomputeLabelVisibility(){
 
   const candidates = [];
   LABELS.forEach(item=>{
-    // 화면 밖으로 완전히 벗어난 상세 지역 path는 렌더링 비용을 아끼기 위해 display:none 처리한다.
-    // 줌아웃 상태에선 이미 CSS(.zoomed-out .region-detail)로 전부 숨겨지므로 확대 상태일 때만 계산한다.
-    // 라벨용 마진(LABEL_VIEWPORT_MARGIN)보다 넉넉하게 둬서, 팬 하는 동안 도형이 먼저 사라졌다가
-    // 라벨만 남는 것처럼 보이지 않게 한다.
-    if(item.pathEl && !isZoomedOut){
-      const halfW = item.w / 2, halfH = item.h / 2;
-      const left = tx + (item.cx - halfW) * scale, right = tx + (item.cx + halfW) * scale;
-      const top = ty + (item.cy - halfH) * scale, bottom = ty + (item.cy + halfH) * scale;
-      const offscreen = right < -PATH_CULL_MARGIN || left > MAPW + PATH_CULL_MARGIN ||
-                         bottom < -PATH_CULL_MARGIN || top > MAPH + PATH_CULL_MARGIN;
-      if(offscreen !== item._wasOffscreen){
-        item.pathEl.classList.toggle("path-offscreen", offscreen);
-        item._wasOffscreen = offscreen;
-      }
-    }
     if(item.cat !== "region-label-world" && item.cat !== activeDetailCat) return; // 비활성 티어는 애초에 후보 아님
     const svgX = tx + item.cx * scale;
     const svgY = ty + item.cy * scale;
@@ -2850,6 +2869,9 @@ function endPointer(e){
   pointers.delete(e.pointerId);
   if(pointers.size === 0){
     viewport.classList.remove("dragging");
+    // 드래그 중엔 라벨 우선순위 재계산을 건너뛰었으므로(scheduleLabelRecompute), 드래그가 끝난
+    // 지금 한 번은 정확하게 다시 계산해서 최종 위치에 맞는 라벨 구성으로 정리한다.
+    if(hadDrag) recomputeLabelVisibility();
     if(wasSingleTap){
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const blob = el && el.closest && el.closest(".region-blob");
