@@ -206,9 +206,12 @@ button{font-family:inherit;}
 
 .region-blob{
   fill:var(--unvisited);stroke:var(--border-line);stroke-width:var(--rw, .5);
-  stroke-linejoin:round;cursor:pointer;transition:fill .15s ease;display:none;
+  stroke-linejoin:round;cursor:pointer;transition:fill .15s ease;
 }
-#zoomLayer.zoomed-out .region-blob{display:block;}
+/* 확대 상태에서, 지금 상세지도를 보고 있는 "활성" 국가 하나만 blob을 숨기고 대신 상세지역(region-detail)을
+   보여준다. 그 외의 상세지도 보유 국가는 확대 상태에서도 blob(국가 전체 단색 도형)만 유지해서, 화면에
+   동시에 여러 나라의 상세 경계선이 겹쳐 그려지는 걸 막는다(activeDetailCountry, computeActiveDetailCountry 참고). */
+.region-blob.blob-active-hidden{display:none;}
 .region-blob:hover, .region-blob.hovered{fill:var(--unvisited-hover);}
 .region-blob.hovered{filter:brightness(1.12);}
 .region-blob.status-planning{fill:var(--plan);}
@@ -687,7 +690,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.10.4</span>
+    · <span id="appVersion" style="opacity:.6;">v2.10.5</span>
   </div>
 </div>
 
@@ -1461,6 +1464,7 @@ const MAPW = WORLD_META.W, MAPH = WORLD_META.H;
 const labelLayer = document.createElementNS(svgNS, "g");
 labelLayer.setAttribute("id", "labelLayer");
 let LABELS = []; // { el, cx, cy, w, h, cat, len, recCode }
+const BLOB_ELS = {}; // key -> <path class="region-blob"> 엘리먼트, computeActiveDetailCountry()에서 빠른 토글용
 // path의 d 속성에서 직접 bbox를 계산한다. getBBox()는 display:none인 상세지역(zoomed-out일 때)에서
 // 0을 반환해서 쓸 수 없었다 — 이 지도 데이터는 M/L/Z만 사용하는 단순 다각형이라 문자열 파싱으로 충분하다.
 // 자오선(경도 180도)을 가로지르는 나라(피지, 키리바시 등)는 원본 지도 데이터가 지도 양쪽 끝(x=0, x=720)에
@@ -1487,14 +1491,14 @@ function pathBBoxFromD(d){
   }
   return best;
 }
-function makeLabel(text, cx, cy, w, h, cat, recCode, isDomestic, pathEl){
+function makeLabel(text, cx, cy, w, h, cat, recCode, isDomestic, pathEl, countryKey){
   if(!text || w <= 0 || h <= 0) return;
   const el = document.createElementNS(svgNS, "text");
   el.setAttribute("class", "region-label " + cat);
   el.setAttribute("dy", "0.35em");
   el.textContent = text;
   labelLayer.appendChild(el);
-  LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null, isDomestic: !!isDomestic, pathEl: pathEl || null });
+  LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null, isDomestic: !!isDomestic, pathEl: pathEl || null, countryKey: countryKey || null });
 }
 // pxPerUnit = 뷰포트 폭이 viewBox(720)를 몇 배로 늘려 보여주는지(예: 1280px 화면이면 ~1.78).
 // 라벨 <text>는 zoomLayer(translate(tx,ty) scale(scale)) 안에 있고, 라벨 자신도
@@ -1530,6 +1534,40 @@ function rectOverlap(a, b){
 
 let visibleLabelSet = new Set();
 
+// 실측(2.10.4 기준): scale이 DETAIL_REVEAL_SCALE(2)을 살짝 넘긴 상태에서 화면 중심을 지도 정중앙에 두면,
+// 뷰포트 사각형이 넓어서 27개 상세지도 보유국 중 다수가 동시에 뷰포트 안에 걸친다 — 이때 region-detail
+// path 1480개 중 982개(66%)가 동시에 display:block으로 계산됐다. 확대해서 특정 나라(예: 이탈리아)를
+// 봐도, 그 나라의 bbox 종횡비가 뷰포트(2:1)와 다르면 2배 패딩을 맞추는 과정에서 옆 나라들까지 뷰포트에
+// 들어와 같이 상세지역이 켜졌다(실측: 이탈리아 확대 시 이탈리아 110개 + 영국 206 + 프랑스 96 + 스페인 50
+// 등 총 562개). 기존엔 "뷰포트 안에 들어왔는지"만 따졌지 "지금 보고 있는 나라가 맞는지"는 안 따졌던 것.
+// 아래 activeDetailCountry는 뷰포트 중심에서 가장 가까운 BLOBS 국가 하나만 골라서, 상세지역은 그 나라
+// 것만 후보로 남기고 나머지는(화면에 실제로 걸쳐 있어도) 감춘다 — 대신 그 나라들은 region-blob(국가
+// 전체 단색 도형, 1개 path)으로 보여서 화면에서 사라지진 않는다. 한 번에 그려지는 상세 path 개수가
+// "현재 보고 있는 나라 하나"로 상한이 걸리므로, 확대·축소 중 특히 여러 나라가 뷰포트에 걸치는 중간
+// 배율 구간(축소할 때 반드시 거쳐가는 구간)에서의 렌더링 부담이 구조적으로 줄어든다.
+let activeDetailCountry = null;
+function computeActiveDetailCountry(){
+  const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
+  if(isZoomedOut){
+    activeDetailCountry = null;
+  } else {
+    const cx = (MAPW/2 - tx) / scale, cy = (MAPH/2 - ty) / scale;
+    let best = null, bestDist = Infinity;
+    for(const key of DETAIL_KEYS){
+      const b = BLOBS[key];
+      if(!b) continue;
+      const dx = b.cx - cx, dy = b.cy - cy;
+      const d = dx*dx + dy*dy;
+      if(d < bestDist){ bestDist = d; best = key; }
+    }
+    activeDetailCountry = best;
+  }
+  DETAIL_KEYS.forEach(key=>{
+    const el = BLOB_ELS[key];
+    if(el) el.classList.toggle("blob-active-hidden", !isZoomedOut && key === activeDetailCountry);
+  });
+}
+
 // 뷰포트 밖 상세 지역 path 컬링은 라벨 우선순위 재계산과 분리한다 — 드래그 중에도 매 프레임 실행해서
 // 새로 화면에 들어오는 지역이 지연 없이 바로 나타나게 한다(우선순위 재계산처럼 무거운 정렬·충돌
 // 검사가 없어서 매 프레임 돌려도 저렴함).
@@ -1542,8 +1580,9 @@ function updatePathCulling(){
     const halfW = item.w / 2, halfH = item.h / 2;
     const left = tx + (item.cx - halfW) * scale, right = tx + (item.cx + halfW) * scale;
     const top = ty + (item.cy - halfH) * scale, bottom = ty + (item.cy + halfH) * scale;
-    const offscreen = right < -PATH_CULL_MARGIN || left > MAPW + PATH_CULL_MARGIN ||
+    const geomOffscreen = right < -PATH_CULL_MARGIN || left > MAPW + PATH_CULL_MARGIN ||
                        bottom < -PATH_CULL_MARGIN || top > MAPH + PATH_CULL_MARGIN;
+    const offscreen = geomOffscreen || item.countryKey !== activeDetailCountry;
     if(offscreen !== item._wasOffscreen){
       item.pathEl.classList.toggle("path-offscreen", offscreen);
       item._wasOffscreen = offscreen;
@@ -1589,6 +1628,7 @@ function recomputeLabelVisibility(){
   const candidates = [];
   LABELS.forEach(item=>{
     if(item.cat !== "region-label-world" && item.cat !== activeDetailCat) return; // 비활성 티어는 애초에 후보 아님
+    if(item.cat === "region-label-detail" && item.countryKey !== activeDetailCountry) return; // 지금 보고 있는 나라가 아니면 후보 아님
     const svgX = tx + item.cx * scale;
     const svgY = ty + item.cy * scale;
     if(svgX < -LABEL_VIEWPORT_MARGIN || svgX > MAPW + LABEL_VIEWPORT_MARGIN ||
@@ -1718,6 +1758,7 @@ function buildMap(){
     el.setAttribute("data-blobkey", key);
     el.setAttribute("d", b.d);
     zoomLayer.appendChild(el);
+    BLOB_ELS[key] = el;
     const name = (BLOB_NAMES[key] && BLOB_NAMES[key].name) || key;
     makeLabel(name, b.cx, b.cy, b.bw, b.bh, "region-label-blob", key.toUpperCase());
   });
@@ -1742,7 +1783,7 @@ function buildMap(){
       p.setAttribute("d", r.d);
       frag.appendChild(p);
       const bb = pathBBoxFromD(r.d);
-      if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail", null, r.domain === "kr", p);
+      if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail", null, r.domain === "kr", p, r.countryKey);
     }
     zoomLayer.appendChild(frag);
     if(idx < detailRegions.length){
@@ -2709,6 +2750,7 @@ function applyTransform(){
     lastRwsApplied = rws;
   }
   zoomLayer.classList.toggle("zoomed-out", scale <= DETAIL_REVEAL_SCALE);
+  computeActiveDetailCountry();
   pingMarkers.forEach(positionPingMarker);
   scheduleLabelRecompute();
 }
