@@ -221,7 +221,7 @@ button{font-family:inherit;}
   fill:var(--ink);
   paint-order:stroke;
   stroke:rgba(255,255,255,.82);
-  stroke-width:3px;
+  stroke-width:var(--label-stroke-w, 3px);
   stroke-linejoin:round;
   pointer-events:none;
   text-anchor:middle;
@@ -1469,9 +1469,26 @@ function makeLabel(text, cx, cy, w, h, cat, recCode){
   labelLayer.appendChild(el);
   LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null });
 }
+// pxPerUnit = 뷰포트 폭이 viewBox(720)를 몇 배로 늘려 보여주는지(예: 1280px 화면이면 ~1.78).
+// 라벨 <text>는 zoomLayer(translate(tx,ty) scale(scale)) 안에 있고, 라벨 자신도
+// transform="translate(cx,cy) scale(1/scale)"로 그 scale을 상쇄한다 — 즉 라벨의 "로컬 좌표계"는
+// scale(scale) * scale(1/scale) = 1로 zoomLayer의 부모, 즉 viewBox 좌표계와 동일하다.
+// 그런데 SVG에서 font-size/stroke-width의 "px" 값은 CSS 절대픽셀이 아니라 그 로컬 좌표계의
+// user-unit으로 해석되기 때문에, viewBox가 실제 화면 폭에 맞춰 pxPerUnit배 늘어난 만큼
+// 글자와 외곽선도 그대로 pxPerUnit배 커져서 렌더링된다(실측: font-size 20px 지정 시 pxPerUnit=1.78에서
+// 실제 렌더 높이가 46px로, 20*1.78*1.3(폰트 메트릭 보정) ≈ 46과 정확히 일치 — 확대/축소 배율과는 무관하고
+// 오직 "뷰포트 폭 대 viewBox 폭" 비율에서만 비롯된 문제였다). 그래서 font-size/stroke-width를 적용할 때
+// pxPerUnit으로 한 번 나눠서 미리 축소해두면, 화면에 그려질 때 다시 곱해져서 의도한 실제 픽셀 크기로 상쇄된다.
 let pxPerUnit = 1;
-function refreshPxPerUnit(){ pxPerUnit = (svg.clientWidth / MAPW) || 1; }
+function refreshPxPerUnit(){
+  pxPerUnit = (svg.clientWidth / MAPW) || 1;
+  svg.style.setProperty("--label-stroke-w", (3 / pxPerUnit).toFixed(3) + "px");
+}
 window.addEventListener("resize", refreshPxPerUnit);
+// buildMap()이 loadState() 도중 아주 초기에 호출되는데, 그 시점엔 브라우저가 아직 레이아웃을
+// 끝내지 않아서 svg.clientWidth가 0(→ pxPerUnit 폴백 1)으로 측정될 수 있다. window "load" 시점엔
+// 레이아웃이 확정돼 있으므로 한 번 더 갱신해서, 초기 로드 타이밍에 따라 라벨 크기가 잘못 고정되는 걸 막는다.
+window.addEventListener("load", ()=>{ refreshPxPerUnit(); if(visibleLabelSet.size) positionVisibleLabels(); });
 
 const LABEL_VIEWPORT_MARGIN = 40;
 const LABEL_MAX_WORLD_TIER = 26;      // 세계지도 축소 상태 — 엄격하게 제한
@@ -1559,7 +1576,8 @@ function recomputeLabelVisibility(){
 function positionVisibleLabels(){
   const k = 1 / scale;
   visibleLabelSet.forEach(item=>{
-    item.el.style.fontSize = (item.el.dataset.fontPx || 11) + "px";
+    const fontPx = parseFloat(item.el.dataset.fontPx) || 11;
+    item.el.style.fontSize = (fontPx / pxPerUnit) + "px"; // pxPerUnit로 미리 나눠서 viewBox 확대 배율을 상쇄
     item.el.setAttribute("transform", "translate(" + item.cx + " " + item.cy + ") scale(" + k + ")");
   });
 }
