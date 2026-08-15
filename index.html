@@ -1060,6 +1060,17 @@ const NP_DATA = JSON.parse(document.getElementById("npData").textContent);
 const MN_DATA = JSON.parse(document.getElementById("mnData").textContent);
 const LA_DATA = JSON.parse(document.getElementById("laData").textContent);
 const BLOBS = JSON.parse(document.getElementById("blobData").textContent);
+// BLOBS의 cx/cy/bw/bh는 원본 데이터에 이미 계산되어 들어있는데, 미국(알래스카·하와이 포함)·캐나다(북극
+// 군도 포함)처럼 본토 외에 멀리 떨어진 영토가 있는 나라는 그 값이 전체 영토를 다 포함한 bbox라서 본토가
+// 아니라 엉뚱한 위치를 가리킨다(실측: 미국 bw=717.85, 지도 폭 720에 근접 — 본토가 아니라 지도 거의
+// 전체를 감싸는 값). pathBBoxFromD()(가장 넓은 하위 폴리곤 하나를 골라 그 중심을 쓰는 함수, 이 파일
+// 아래쪽에 정의되어 있지만 함수 선언이라 호이스팅되어 여기서 바로 호출 가능)로 다시 계산해 덮어써서,
+// 라벨 위치와 focusBlob() 확대 목표 지점(둘 다 b.cx/b.cy/b.bw/b.bh를 그대로 쓴다) 모두 본토 중심으로
+// 자연스럽게 오도록 한다.
+Object.values(BLOBS).forEach(b=>{
+  const bb = pathBBoxFromD(b.d);
+  if(bb){ b.cx = bb.x + bb.width/2; b.cy = bb.y + bb.height/2; b.bw = bb.width; b.bh = bb.height; }
+});
 
 const PROV_DESC = {
   "11":"대한민국의 수도이자 정치·경제·문화의 중심지입니다.",
