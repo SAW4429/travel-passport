@@ -191,6 +191,7 @@ button{font-family:inherit;}
 .region.dimmed, .region-blob.dimmed{opacity:.18;}
 .region.selected{stroke:var(--stamp-red);stroke-width:var(--rws, 1.6);}
 #zoomLayer.zoomed-out .region-detail{display:none;}
+.region-detail.path-offscreen{display:none;}
 .ping-marker{pointer-events:none;}
 .ping-ring{fill:none;stroke:var(--gold);stroke-width:.6;opacity:0;animation:pingExpand 1.3s ease-out infinite;}
 .ping-ring2{animation-delay:.55s;}
@@ -1472,14 +1473,14 @@ function pathBBoxFromD(d){
   }
   return best;
 }
-function makeLabel(text, cx, cy, w, h, cat, recCode, isDomestic){
+function makeLabel(text, cx, cy, w, h, cat, recCode, isDomestic, pathEl){
   if(!text || w <= 0 || h <= 0) return;
   const el = document.createElementNS(svgNS, "text");
   el.setAttribute("class", "region-label " + cat);
   el.setAttribute("dy", "0.35em");
   el.textContent = text;
   labelLayer.appendChild(el);
-  LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null, isDomestic: !!isDomestic });
+  LABELS.push({ el, cx, cy, w, h, cat, len: text.length, recCode: recCode || null, isDomestic: !!isDomestic, pathEl: pathEl || null });
 }
 // pxPerUnit = 뷰포트 폭이 viewBox(720)를 몇 배로 늘려 보여주는지(예: 1280px 화면이면 ~1.78).
 // 라벨 <text>는 zoomLayer(translate(tx,ty) scale(scale)) 안에 있고, 라벨 자신도
@@ -1503,6 +1504,7 @@ window.addEventListener("resize", refreshPxPerUnit);
 window.addEventListener("load", ()=>{ refreshPxPerUnit(); if(visibleLabelSet.size) positionVisibleLabels(); });
 
 const LABEL_VIEWPORT_MARGIN = 40;
+const PATH_CULL_MARGIN = 80;
 const LABEL_MAX_WORLD_TIER = 26;      // 세계지도 축소 상태 — 엄격하게 제한
 function labelMaxDetailTier(){ return window.innerWidth < 640 ? 20 : 40; } // 확대 상태 — 화면 클수록 더 허용
 const LABEL_MIN_FONT = 8, LABEL_MAX_FONT = 13;               // 국가 단위
@@ -1541,6 +1543,21 @@ function recomputeLabelVisibility(){
 
   const candidates = [];
   LABELS.forEach(item=>{
+    // 화면 밖으로 완전히 벗어난 상세 지역 path는 렌더링 비용을 아끼기 위해 display:none 처리한다.
+    // 줌아웃 상태에선 이미 CSS(.zoomed-out .region-detail)로 전부 숨겨지므로 확대 상태일 때만 계산한다.
+    // 라벨용 마진(LABEL_VIEWPORT_MARGIN)보다 넉넉하게 둬서, 팬 하는 동안 도형이 먼저 사라졌다가
+    // 라벨만 남는 것처럼 보이지 않게 한다.
+    if(item.pathEl && !isZoomedOut){
+      const halfW = item.w / 2, halfH = item.h / 2;
+      const left = tx + (item.cx - halfW) * scale, right = tx + (item.cx + halfW) * scale;
+      const top = ty + (item.cy - halfH) * scale, bottom = ty + (item.cy + halfH) * scale;
+      const offscreen = right < -PATH_CULL_MARGIN || left > MAPW + PATH_CULL_MARGIN ||
+                         bottom < -PATH_CULL_MARGIN || top > MAPH + PATH_CULL_MARGIN;
+      if(offscreen !== item._wasOffscreen){
+        item.pathEl.classList.toggle("path-offscreen", offscreen);
+        item._wasOffscreen = offscreen;
+      }
+    }
     if(item.cat !== "region-label-world" && item.cat !== activeDetailCat) return; // 비활성 티어는 애초에 후보 아님
     const svgX = tx + item.cx * scale;
     const svgY = ty + item.cy * scale;
@@ -1598,6 +1615,43 @@ function positionVisibleLabels(){
     item.el.setAttribute("transform", "translate(" + item.cx + " " + item.cy + ") scale(" + k + ")");
   });
 }
+
+/* ---------- 디버그: 실제 프레임 성능 확인용(기본 숨김) ----------
+   ?debugfps=1 로 접속하면 localStorage에 켜짐 플래그가 저장되고, 화면 우상단에 FPS/프레임 시간이
+   표시된다. 확대/축소/드래그 중 실제 수치를 눈으로 직접 확인하기 위한 것 — 일반 사용자에게는
+   보이지 않고(?debugfps=0으로 끌 수 있음), 배포 코드에는 포함하되 기본은 항상 꺼진 상태다. */
+(function initDebugFps(){
+  try{
+    const params = new URLSearchParams(location.search);
+    if(params.get("debugfps") === "1") localStorage.setItem("debugFpsOn", "1");
+    if(params.get("debugfps") === "0") localStorage.removeItem("debugFpsOn");
+    if(localStorage.getItem("debugFpsOn") !== "1") return;
+  }catch(e){ return; }
+
+  const box = document.createElement("div");
+  box.id = "debugFpsBox";
+  box.style.cssText = "position:fixed;top:8px;right:8px;z-index:99999;background:rgba(0,0,0,.78);color:#5CFF7A;font:11px/1.5 'JetBrains Mono',monospace;padding:7px 10px;border-radius:6px;pointer-events:none;white-space:pre;";
+  box.textContent = "FPS 측정 중…";
+  document.addEventListener("DOMContentLoaded", ()=> document.body.appendChild(box));
+  if(document.body) document.body.appendChild(box);
+
+  let lastT = performance.now();
+  let frames = 0, lastReportT = lastT, worstFrame = 0;
+  function tick(t){
+    const dt = t - lastT;
+    lastT = t;
+    frames++;
+    if(dt > worstFrame) worstFrame = dt;
+    if(t - lastReportT >= 500){
+      const fps = Math.round((frames * 1000) / (t - lastReportT));
+      box.textContent = "FPS " + fps + "\n프레임 " + dt.toFixed(0) + "ms\n최악(0.5초 중) " + worstFrame.toFixed(0) + "ms";
+      box.style.color = worstFrame > 200 ? "#FF5C5C" : (worstFrame > 80 ? "#FFD65C" : "#5CFF7A");
+      frames = 0; lastReportT = t; worstFrame = 0;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
 
 function buildMap(){
   zoomLayer.innerHTML = "";
@@ -1658,7 +1712,7 @@ function buildMap(){
       p.setAttribute("d", r.d);
       frag.appendChild(p);
       const bb = pathBBoxFromD(r.d);
-      if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail", null, r.domain === "kr");
+      if(bb) makeLabel(r.name, bb.x + bb.width/2, bb.y + bb.height/2, bb.width, bb.height, "region-label-detail", null, r.domain === "kr", p);
     }
     zoomLayer.appendChild(frag);
     if(idx < detailRegions.length){
