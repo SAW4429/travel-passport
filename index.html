@@ -1142,6 +1142,11 @@ const BLOB_NAMES = {
   np:{name:"네팔",eng:"Nepal"}, mn:{name:"몽골",eng:"Mongolia"}, la:{name:"라오스",eng:"Laos"}
 };
 const DETAIL_KEYS = Object.keys(BLOB_NAMES);
+// 검색창은 지금까지 ALL_REGIONS(=MUNI_DATA+WORLD_DATA+DETAIL_ARRAYS)만 대상으로 했는데, 상세지도가
+// 있는 27개국(BLOBS/BLOB_NAMES) 자체의 "국가 이름"은 ALL_REGIONS에 없다 — 그 나라의 하위 지역(예:
+// 일본의 "오사카") 이름만 있고 "일본"이라는 항목 자체가 없어서, 국가명으로 검색하면 결과가 0개였다.
+// 검색 후보에 이 27개국 이름도 추가해서, 국가 단위 검색도 지역 단위 검색과 동일하게 동작하게 한다.
+const BLOB_SEARCH_ENTRIES = DETAIL_KEYS.map(key => ({ isBlob: true, blobKey: key, name: BLOB_NAMES[key].name, eng: BLOB_NAMES[key].eng }));
 
 function eyebrowOf(r){
   if(r.domain === "kr"){ const p = PROV_BY_CODE[r.code.slice(0,2)]; return p ? p.name : ""; }
@@ -2976,19 +2981,29 @@ searchInput.addEventListener("input", ()=>{
   const q = searchInput.value.trim();
   if(!q){ searchResults.classList.remove("open"); return; }
   const qn = q.replace(/\s+/g,"");
-  const matches = ALL_REGIONS.filter(r => (r.name||"").replace(/\s+/g,"").includes(qn) || (r.eng||"").toLowerCase().includes(q.toLowerCase()));
+  const ql = q.toLowerCase();
+  const nameMatch = r => (r.name||"").replace(/\s+/g,"").includes(qn) || (r.eng||"").toLowerCase().includes(ql);
+  // 국가명(예: "일본") 자체는 BLOB_SEARCH_ENTRIES에만 있고 ALL_REGIONS엔 그 나라의 하위 지역만 있어서,
+  // 두 목록을 합쳐서 검색한다 — 국가 단위 검색과 지역 단위 검색이 같은 검색창에서 다 되도록.
+  const matches = BLOB_SEARCH_ENTRIES.filter(nameMatch).concat(ALL_REGIONS.filter(nameMatch));
   searchResults.innerHTML = "";
   matches.slice(0,10).forEach(r=>{
-    const eyebrow = eyebrowOf(r);
+    const eyebrow = r.isBlob ? "" : eyebrowOf(r);
     const div = document.createElement("div");
     div.innerHTML = r.name + (eyebrow ? ' <span class="sr-prov">· '+eyebrow+'</span>' : "");
     div.addEventListener("click", (e)=>{
       e.stopPropagation();
       searchResults.classList.remove("open");
       searchInput.value = "";
-      openSidebar(r.code);
-      focusRegion(r.code);
-      pingRegion(r.code);
+      if(r.isBlob){
+        focusBlob(r.blobKey);
+        const b = BLOBS[r.blobKey];
+        if(b) pingAt(b.cx, b.cy);
+      } else {
+        openSidebar(r.code);
+        focusRegion(r.code);
+        pingRegion(r.code);
+      }
     });
     searchResults.appendChild(div);
   });
@@ -3086,9 +3101,7 @@ function focusBlob(key){
 }
 
 let pingMarkers = [];
-function pingRegion(code){
-  const r = BY_CODE[code];
-  if(!r) return;
+function pingAt(cx, cy){
   const g = document.createElementNS(svgNS,"g");
   g.setAttribute("class","ping-marker");
   g.innerHTML =
@@ -3096,13 +3109,18 @@ function pingRegion(code){
     '<circle class="ping-ring ping-ring2" cx="0" cy="0" r="1.5"></circle>' +
     '<circle class="ping-dot" cx="0" cy="0" r="1.6"></circle>';
   zoomLayer.appendChild(g);
-  const entry = { cx: r.cx, cy: r.cy, el: g };
+  const entry = { cx, cy, el: g };
   pingMarkers.push(entry);
   positionPingMarker(entry);
   setTimeout(()=>{
     pingMarkers = pingMarkers.filter(p => p !== entry);
     if(g.parentNode) g.parentNode.removeChild(g);
   }, 2600);
+}
+function pingRegion(code){
+  const r = BY_CODE[code];
+  if(!r) return;
+  pingAt(r.cx, r.cy);
 }
 function positionPingMarker(p){
   p.el.setAttribute("transform", "translate("+p.cx+" "+p.cy+") scale("+(1/scale)+")");
