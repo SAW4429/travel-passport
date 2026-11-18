@@ -173,7 +173,7 @@ button{font-family:inherit;}
 .map-viewport.dragging{cursor:grabbing;}
 .map-viewport svg{width:100%;height:100%;display:block;user-select:none;shape-rendering:geometricPrecision;}
 .ocean-bg{fill:var(--ocean);}
-.graticule{fill:none;stroke:var(--graticule);stroke-width:var(--rw, .35);pointer-events:none;}
+.graticule{fill:none;stroke:var(--graticule);stroke-width:calc(var(--rw, .35) * .45);pointer-events:none;}
 .region{
   fill:var(--unvisited);
   stroke:var(--border-line);
@@ -636,7 +636,7 @@ button{font-family:inherit;}
         <div class="chip" data-filter="visited">방문완료</div>
       </div>
 
-      <svg id="krMap" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" style="--rw: 0.2500; --rws: 0.7500;">
+      <svg id="krMap" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" style="--rw: 0.5500; --rws: 0.7500;">
         <g id="zoomLayer" transform="translate(0 0) scale(1)"></g>
       </svg>
 
@@ -701,7 +701,7 @@ button{font-family:inherit;}
   <div class="credit">
     지도 데이터: KOSTAT(국내 시군구) · <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a>, Natural Earth(국가·행정구역) · <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> / <a href="https://github.com/nvkelso/natural-earth-vector" target="_blank" rel="noopener">natural-earth-vector</a>, 국기 이미지 · <a href="https://flagcdn.com/" target="_blank" rel="noopener">flagcdn.com</a> — 일부 경계·표기는 실제와 다소 차이가 있을 수 있습니다.
     · <a href="#" id="legalOpenLink">개인정보처리방침 · 이용약관 · 제휴 고지</a>
-    · <span id="appVersion" style="opacity:.6;">v2.10.9</span>
+    · <span id="appVersion" style="opacity:.6;">v2.10.10</span>
   </div>
 </div>
 
@@ -1030,7 +1030,10 @@ function buildStaySearchUrl(destName){
 const MUNI_DATA = JSON.parse(document.getElementById("muniData").textContent);
 const PROV_DATA = JSON.parse(document.getElementById("provData").textContent);
 const WORLD_DATA_RAW = JSON.parse(document.getElementById("worldData").textContent);
+// Natural Earth Admin-0 Tuvalu (v2.0.0 source copy); lon/lat projected into the 720×360 map.
+WORLD_DATA_RAW.push({code:"798",name:"투발루",eng:"Tuvalu",region:"오세아니아",iso2:"TV",cx:718.41,cy:197,bw:.06,bh:.16,label:{cx:718.41,cy:197,w:8,h:8},d:"M719.82,198.84L719.8,198.78L719.82,198.8Z M719.76,198.72L719.74,198.68L719.74,198.7Z M718.42,197.06L718.38,197.08L718.4,197.04L718.4,196.92L718.44,197.04Z M716.78,196.06L716.76,196.14L716.74,196.14Z M717.38,194.98L717.38,195L717.36,194.98L717.34,194.9L717.38,194.96Z M714.3,194.4L714.3,194.38Z M712.64,192.6L712.62,192.6L712.64,192.58Z M714.72,192.24L714.68,192.24L714.68,192.22Z M712.28,191.38L712.3,191.42L712.26,191.36Z"});
 const WORLD_META = JSON.parse(document.getElementById("worldMeta").textContent);
+let zoomAnimationFrame = null, zoomTargetScale = null, zoomTargetPoint = null;
 const JP_DATA = JSON.parse(document.getElementById("jpData").textContent);
 const VN_DATA = JSON.parse(document.getElementById("vnData").textContent);
 const PH_DATA = JSON.parse(document.getElementById("phData").textContent);
@@ -1565,10 +1568,9 @@ window.addEventListener("load", ()=>{ refreshPxPerUnit(); if(visibleLabelSet.siz
 
 const LABEL_VIEWPORT_MARGIN = 40;
 const PATH_CULL_MARGIN = 80;
-const LABEL_MAX_WORLD_TIER = 26;      // 세계지도 축소 상태 — 엄격하게 제한
-function labelMaxDetailTier(){ return window.innerWidth < 640 ? 20 : 40; } // 확대 상태 — 화면 클수록 더 허용
-const LABEL_MIN_FONT = 8, LABEL_MAX_FONT = 13;               // 국가 단위
-const LABEL_MIN_FONT_DETAIL = 7, LABEL_MAX_FONT_DETAIL = 12; // 하위 지역
+const LABEL_MAX_VISIBLE = 220; // 겹침 판정이 화면에 맞는 이름만 남긴다
+const LABEL_MIN_FONT = 8, LABEL_MAX_FONT = 15;               // 국가 단위
+const LABEL_MIN_FONT_DETAIL = 7, LABEL_MAX_FONT_DETAIL = 14; // 하위 지역
 
 function rectOverlap(a, b){
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -1665,7 +1667,7 @@ function recomputeLabelVisibility(){
   if(!LABELS.length) return;
   const isZoomedOut = scale <= DETAIL_REVEAL_SCALE;
   const activeDetailCat = isZoomedOut ? "region-label-blob" : "region-label-detail";
-  const maxLabels = isZoomedOut ? LABEL_MAX_WORLD_TIER : labelMaxDetailTier();
+  const maxLabels = LABEL_MAX_VISIBLE;
 
   const candidates = [];
   LABELS.forEach(item=>{
@@ -1681,7 +1683,8 @@ function recomputeLabelVisibility(){
     const maxFont = isDetail ? LABEL_MAX_FONT_DETAIL : LABEL_MAX_FONT;
     const onScreenW = item.w * scale * pxPerUnit;
     const onScreenH = item.h * scale * pxPerUnit;
-    const fontPx = clamp(onScreenW * 0.16, minFont, maxFont);
+    const zoomFont = minFont + 5 + Math.log2(scale) * 1.4;
+    const fontPx = clamp(Math.min(onScreenW * 0.16, zoomFont), minFont, maxFont);
     const estW = item.len * fontPx * 0.62;
     const estH = fontPx * 1.3;
     // 하한보다 작거나 도형에 안 맞으면 억지로 줄이지 않고 그냥 숨긴다
@@ -1793,7 +1796,7 @@ function buildMap(){
     p.setAttribute("d", r.d);
     zoomLayer.appendChild(p);
     const bb = pathBBoxFromD(r.d);
-    if(bb){ const c = labelCenterOf(bb); makeLabel(r.name, c.cx, c.cy, bb.width, bb.height, "region-label-world", countryCodeOf(r)); }
+    if(bb){ const c = r.label || labelCenterOf(bb); makeLabel(r.name, c.cx, c.cy, c.w || bb.width, c.h || bb.height, "region-label-world", countryCodeOf(r)); }
   });
 
   Object.entries(BLOBS).forEach(([key,b])=>{
@@ -1807,6 +1810,7 @@ function buildMap(){
     makeLabel(name, b.cx, b.cy, b.bw, b.bh, "region-label-blob", key.toUpperCase());
   });
 
+  cancelZoomAnimation();
   scale = 1; tx = 0; ty = 0;
   applyTransform();
 
@@ -2778,7 +2782,7 @@ let hadDrag = false;
 
 let scale = 1, tx = 0, ty = 0;
 const SCALE_MIN = 1, SCALE_MAX = 90;
-const BASE_RW = .25, BASE_RWS = .75;
+const BASE_RW = .55, BASE_RWS = .75;
 const DETAIL_REVEAL_SCALE = 2;
 // --rw/--rws는 .region/.region-blob 등 최대 ~1700개 path의 stroke-width에 쓰인다(var(--rw, .5)).
 // CSS 커스텀 프로퍼티가 바뀌면 이를 참조하는 모든 요소가 스타일 재계산되므로, 매 프레임(스크롤/줌마다)
@@ -2841,11 +2845,35 @@ function scheduleRender(){
     applyTransform();
   });
 }
-// scale/tx/ty 갱신(가벼움)과 실제 DOM 반영(applyTransform, 상대적으로 무거움)을 분리한다.
-// 휠 이벤트는 트랙패드에서 한 번의 제스처로 짧은 시간에 수십 번 발생할 수 있는데, 예전에는 매번
-// applyTransform()을 동기적으로 실행해서 브라우저 렌더링 속도를 앞질러 버벅였다. 핀치줌/드래그가 이미
-// 쓰고 있는 scheduleRender()(requestAnimationFrame 배치)를 휠에도 그대로 재사용해서, 한 프레임 안에
-// 여러 번 휠 이벤트가 와도 실제 DOM 갱신은 프레임당 한 번만 일어나게 한다.
+function cancelZoomAnimation(){
+  if(zoomAnimationFrame) cancelAnimationFrame(zoomAnimationFrame);
+  zoomAnimationFrame = null;
+  zoomTargetScale = null;
+  zoomTargetPoint = null;
+}
+function animateZoomAt(newScale, clientX, clientY){
+  zoomTargetScale = clamp(newScale, SCALE_MIN, SCALE_MAX);
+  zoomTargetPoint = {x:clientX, y:clientY};
+  if(zoomAnimationFrame) return;
+  function step(){
+    zoomAnimationFrame = null;
+    if(zoomTargetScale === null || !zoomTargetPoint) return;
+    const {x,y} = zoomTargetPoint;
+    const remaining = zoomTargetScale - scale;
+    if(Math.abs(remaining) < 0.005){
+      setZoomAt(zoomTargetScale, x, y);
+      zoomTargetScale = null;
+      zoomTargetPoint = null;
+      applyTransform();
+      return;
+    }
+    setZoomAt(scale + remaining * 0.28, x, y);
+    applyTransform();
+    zoomAnimationFrame = requestAnimationFrame(step);
+  }
+  zoomAnimationFrame = requestAnimationFrame(step);
+}
+// 휠과 확대 버튼은 목표 배율을 누적하고 requestAnimationFrame으로 조금씩 따라가며, 한 프레임에 한 번만 그린다.
 function setZoomAt(newScale, clientX, clientY){
   newScale = clamp(newScale, SCALE_MIN, SCALE_MAX);
   const p = localPoint(clientX, clientY);
@@ -2856,27 +2884,27 @@ function setZoomAt(newScale, clientX, clientY){
   clampPan();
 }
 function zoomAt(newScale, clientX, clientY){
-  setZoomAt(newScale, clientX, clientY);
-  applyTransform();
+  animateZoomAt(newScale, clientX, clientY);
 }
 window.addEventListener("resize", refreshSvgCTM);
 window.addEventListener("orientationchange", ()=>setTimeout(refreshSvgCTM, 200));
 refreshSvgCTM();
 viewport.addEventListener("wheel", e=>{
   e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.18 : 0.85;
-  setZoomAt(scale*factor, e.clientX, e.clientY);
-  scheduleRender();
+  const deltaUnit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.clientHeight : 1;
+  const delta = clamp(e.deltaY * deltaUnit, -250, 250);
+  const baseScale = zoomTargetScale === null ? scale : zoomTargetScale;
+  animateZoomAt(baseScale * Math.exp(-delta * 0.0011), e.clientX, e.clientY);
 }, {passive:false});
 document.getElementById("zoomIn").addEventListener("click", ()=>{
   const rect = viewport.getBoundingClientRect();
-  zoomAt(scale*1.35, rect.left+rect.width/2, rect.top+rect.height/2);
+  zoomAt((zoomTargetScale === null ? scale : zoomTargetScale)*1.2, rect.left+rect.width/2, rect.top+rect.height/2);
 });
 document.getElementById("zoomOut").addEventListener("click", ()=>{
   const rect = viewport.getBoundingClientRect();
-  zoomAt(scale*0.72, rect.left+rect.width/2, rect.top+rect.height/2);
+  zoomAt((zoomTargetScale === null ? scale : zoomTargetScale)/1.2, rect.left+rect.width/2, rect.top+rect.height/2);
 });
-document.getElementById("zoomReset").addEventListener("click", ()=>{ scale=1; tx=0; ty=0; applyTransform(); });
+document.getElementById("zoomReset").addEventListener("click", ()=>{ cancelZoomAnimation(); scale=1; tx=0; ty=0; applyTransform(); });
 
 let pointers = new Map();
 let gesture = null;
@@ -2923,6 +2951,7 @@ function showPreviewAt(clientX, clientY){
 }
 viewport.addEventListener("pointerdown", e=>{
   if(e.target.closest("button, .chip, .search-wrap, input, .zoom-controls, .legend, .filters")) return;
+  cancelZoomAnimation();
   viewport.setPointerCapture(e.pointerId);
   if(pointers.size === 0) hadDrag = false;
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
@@ -3115,6 +3144,7 @@ document.addEventListener("click", e=>{
 function focusBlob(key){
   const b = BLOBS[key];
   if(!b) return;
+  cancelZoomAnimation();
   const bw = Math.max(b.bw || 2, 0.4);
   const bh = Math.max(b.bh || 2, 0.4);
   const pad = 2.0;
@@ -3155,6 +3185,7 @@ function positionPingMarker(p){
 function focusRegion(code){
   const r = BY_CODE[code];
   if(!r) return;
+  cancelZoomAnimation();
   const bw = Math.max(r.bw || 2, 0.4);
   const bh = Math.max(r.bh || 2, 0.4);
   const pad = 2.4;
